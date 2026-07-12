@@ -1,0 +1,12 @@
+{
+  "name": "chef-linear-context",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "fetch": "node dist/fetch-issue.js"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

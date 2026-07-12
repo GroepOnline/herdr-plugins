@@ -1,0 +1,12 @@
+{
+  "name": "chef-github-status",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "check": "node dist/check-pr.js"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

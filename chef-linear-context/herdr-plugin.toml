@@ -1,0 +1,33 @@
+id = "com.chefgroep.linear-context"
+name = "Linear Issue Context"
+version = "0.1.0"
+min_herdr_version = "0.7.3"
+description = "Fetch Linear issue title/status/assignee into the Fleet Ops Bar"
+platforms = ["linux", "macos", "windows"]
+
+[[build]]
+command = ["npm", "install", "--omit=dev"]
+
+[[actions]]
+id = "fetch-issue"
+title = "Fetch Linear Issue"
+description = "Pull issue metadata by ID or from branch name"
+contexts = ["workspace", "pane"]
+command = ["node", "dist/fetch-issue.js"]
+
+[[actions]]
+id = "set-issue"
+title = "Bind Issue to Workspace"
+description = "Associate a Linear issue ID with the current workspace"
+contexts = ["workspace"]
+command = ["node", "dist/set-issue.js"]
+
+[[events]]
+on = "worktree.created"
+command = ["node", "dist/fetch-issue.js"]
+
+[[link_handlers]]
+id = "linear-issue-url"
+title = "Open Linear Issue"
+pattern = "^https?://linear\\.app/[^/]+/issue/([A-Z]+-\\d+)"
+action = "fetch-issue"

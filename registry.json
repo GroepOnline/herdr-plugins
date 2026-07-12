@@ -1,0 +1,22 @@
+{
+  "plugins": [
+    {
+      "id": "com.chefgroep.linear-context",
+      "name": "Linear Issue Context",
+      "version": "0.1.0",
+      "description": "Fetch Linear issue metadata into the Fleet Ops Bar",
+      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-linear-context",
+      "categories": ["productivity", "linear"],
+      "min_herdr_version": "0.7.3"
+    },
+    {
+      "id": "com.chefgroep.github-status",
+      "name": "GitHub PR/CI Status",
+      "version": "0.1.0",
+      "description": "Poll PR status and CI check results from GitHub",
+      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-github-status",
+      "categories": ["productivity", "github"],
+      "min_herdr_version": "0.7.3"
+    }
+  ]
+}
