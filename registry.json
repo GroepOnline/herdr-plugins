@@ -1,6 +1,15 @@
 {
   "plugins": [
     {
+      "id": "com.onlinechefgroep.pi-helios-memory",
+      "name": "Pi-Helios Memory",
+      "version": "0.7.1",
+      "description": "Persistent AI memory system with SQLite FTS5, content scanning, and hub sync",
+      "homepage": "https://github.com/OnlineChefGroep/Pi-Helios-Memory-Private",
+      "categories": ["ai", "memory", "pi-extension"],
+      "min_herdr_version": "0.7.3"
+    },
+    {
       "id": "com.chefgroep.linear-context",
       "name": "Linear Issue Context",
       "version": "0.1.0",
