@@ -1,6 +1,6 @@
 id = "com.chefgroep.github-status"
 name = "GitHub PR/CI Status"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.3"
 description = "Poll PR status and CI check results from GitHub"
 platforms = ["linux", "macos", "windows"]
@@ -17,6 +17,13 @@ title = "Check PR Status"
 description = "Fetch mergeable state, reviews, and CI checks for current branch"
 contexts = ["workspace"]
 command = ["node", "dist/check-pr.js"]
+
+[[actions]]
+id = "list-prs"
+title = "List Open PRs"
+description = "List all open PRs for the workspace repo"
+contexts = ["workspace", "global"]
+command = ["node", "dist/list-prs.js"]
 
 [[events]]
 on = "worktree.opened"
