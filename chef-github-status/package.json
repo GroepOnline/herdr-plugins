@@ -7,6 +7,7 @@
     "check": "node dist/check-pr.js"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "typescript": "^5",
+    "@types/node": "^20"
   }
 }

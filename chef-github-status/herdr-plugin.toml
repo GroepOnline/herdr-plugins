@@ -6,7 +6,10 @@ description = "Poll PR status and CI check results from GitHub"
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
-command = ["npm", "install", "--omit=dev"]
+command = ["npm", "install"]
+
+[[build]]
+command = ["npm", "run", "build"]
 
 [[actions]]
 id = "check-pr"
@@ -14,13 +17,6 @@ title = "Check PR Status"
 description = "Fetch mergeable state, reviews, and CI checks for current branch"
 contexts = ["workspace"]
 command = ["node", "dist/check-pr.js"]
-
-[[actions]]
-id = "list-prs"
-title = "List Open PRs"
-description = "List all open PRs for the workspace repo"
-contexts = ["workspace", "global"]
-command = ["node", "dist/list-prs.js"]
 
 [[events]]
 on = "worktree.opened"

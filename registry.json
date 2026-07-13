@@ -1,21 +1,15 @@
 {
   "plugins": [
     {
-      "id": "com.onlinechefgroep.pi-helios-memory",
-      "name": "Pi-Helios Memory",
-      "version": "0.7.1",
-      "description": "Persistent AI memory system with SQLite FTS5, content scanning, and hub sync",
-      "homepage": "https://github.com/OnlineChefGroep/Pi-Helios-Memory-Private",
-      "categories": ["ai", "memory", "pi-extension"],
-      "min_herdr_version": "0.7.3"
-    },
-    {
       "id": "com.chefgroep.linear-context",
       "name": "Linear Issue Context",
       "version": "0.1.0",
       "description": "Fetch Linear issue metadata into the Fleet Ops Bar",
       "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-linear-context",
-      "categories": ["productivity", "linear"],
+      "categories": [
+        "productivity",
+        "linear"
+      ],
       "min_herdr_version": "0.7.3"
     },
     {
@@ -24,7 +18,10 @@
       "version": "0.1.0",
       "description": "Poll PR status and CI check results from GitHub",
       "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-github-status",
-      "categories": ["productivity", "github"],
+      "categories": [
+        "productivity",
+        "github"
+      ],
       "min_herdr_version": "0.7.3"
     }
   ]
