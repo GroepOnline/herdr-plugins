@@ -23,6 +23,20 @@
         "github"
       ],
       "min_herdr_version": "0.7.3"
+    },
+    {
+      "id": "com.chefgroep.pi-eval",
+      "name": "Pi Session Eval",
+      "version": "0.1.0",
+      "description": "Ingest Pi agent sessions, score model/tool health, and auto-evaluate against free models via OmniRoute",
+      "homepage": "https://github.com/OnlineChefGroep/chef-pi-eval",
+      "categories": [
+        "observability",
+        "evaluation",
+        "pi",
+        "fleet"
+      ],
+      "min_herdr_version": "0.7.6"
     }
   ]
 }
