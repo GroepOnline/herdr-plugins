@@ -37,6 +37,19 @@
         "fleet"
       ],
       "min_herdr_version": "0.7.6"
+    },
+    {
+      "id": "com.chefgroep.kater-bridge",
+      "name": "Kater MCP Bridge",
+      "version": "0.1.0",
+      "description": "Gateway health, doctor diagnostics, and PR-gate verdicts via Kater REST",
+      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/kater-bridge",
+      "categories": [
+        "productivity",
+        "kater",
+        "utrecht"
+      ],
+      "min_herdr_version": "0.7.3"
     }
   ]
 }
