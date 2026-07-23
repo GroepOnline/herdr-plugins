@@ -1,15 +1,19 @@
 {
   "name": "kater-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node dist/test-mcp.js",
     "fleet-status": "node dist/fleet-status.js",
     "doctor": "node dist/pipeline.js",
     "pr-gate": "node dist/pr-gate.js"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20"
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
