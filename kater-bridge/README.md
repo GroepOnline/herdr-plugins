@@ -39,7 +39,8 @@ Optional plugin config `.env`:
 
 ```bash
 npm install && npm run build
-npm test                    # MCP smoke test (needs Kater on :9090/:9091)
+npm test                    # build + no-op (CI-safe)
+npm run smoke               # MCP smoke test (needs Kater on :9090/:9091)
 npm run fleet-status        # writes fragment to $HERDR_PLUGIN_STATE_DIR
 ```
 

@@ -1,34 +1,16 @@
 #!/usr/bin/env node
-import { loadDotEnv, writeFragment, katerGet, PLUGIN_ID } from "./common";
+import { loadDotEnv, writeFragment, katerGet, summarizeFleet, katerApiUrl, PLUGIN_ID } from "./common";
 import { katerCallTool } from "./mcp";
 
 loadDotEnv();
 
-type FleetNode = { name?: string; hostname?: string; status?: string; roles?: string[]; role?: string };
 type FleetInventory = {
-  nodes?: FleetNode[];
+  nodes?: Array<{ name?: string; hostname?: string; status?: string; roles?: string[]; role?: string }>;
   node_count?: number;
   status_counts?: Record<string, number>;
   summary?: { total?: number; online?: number; offline?: number };
   error?: string;
 };
-
-function summarizeFleet(inventory: FleetInventory | null) {
-  const nodes = inventory?.nodes || [];
-  const okCount = inventory?.status_counts?.ok ?? nodes.filter(n => (n.status || "").toLowerCase() === "ok").length;
-  const decommissioned = inventory?.status_counts?.decommissioned ?? nodes.filter(n => (n.status || "").toLowerCase() === "decommissioned").length;
-  const total = inventory?.node_count ?? nodes.length;
-  return {
-    node_count: total,
-    ok: okCount,
-    decommissioned,
-    nodes: nodes.slice(0, 12).map(n => ({
-      name: n.hostname || n.name,
-      status: n.status,
-      role: n.role || (n.roles || []).join(", "),
-    })),
-  };
-}
 
 async function main() {
   const [health, status, inventory] = await Promise.all([
@@ -47,7 +29,7 @@ async function main() {
     writeFragment(
       PLUGIN_ID,
       "kater",
-      { error: `Kater gateway unreachable at ${process.env.KATER_API_URL || "http://127.0.0.1:9091"}` },
+      { error: `Kater gateway unreachable at ${katerApiUrl()}` },
       30,
     );
     console.log("kater-bridge: gateway unreachable");

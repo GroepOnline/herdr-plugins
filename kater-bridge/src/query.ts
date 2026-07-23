@@ -4,10 +4,18 @@ import { katerCallTool } from "./mcp";
 
 loadDotEnv();
 
-const CTX = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+function parseContext(): Record<string, unknown> {
+  try {
+    return JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+  } catch {
+    return {};
+  }
+}
+
+const CTX = parseContext();
 
 async function main() {
-  const query = (process.env.KATER_QUERY || CTX.query || CTX.selection || "").trim();
+  const query = (process.env.KATER_QUERY || String(CTX.query || CTX.selection || "")).trim();
   if (!query) {
     writeFragment(
       PLUGIN_ID,

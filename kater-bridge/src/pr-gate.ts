@@ -54,19 +54,22 @@ async function main() {
   const gateRes = await katerFetch<PrGate>(gatePath, 20);
   const gate = gateRes.data;
 
-  if (!gateRes.ok && gate?.error) {
+  if (!gateRes.ok || !gate) {
+    const err = gate?.error ?? (gateRes.status ? `Kater gate HTTP ${gateRes.status}` : "Kater gate unreachable");
     writeFragment(
       PLUGIN_ID,
       "kater-pr",
-      { branch, pr_number: pr.number, pr_title: pr.title, error: gate.error, http_status: gateRes.status },
+      { branch, pr_number: pr.number, pr_title: pr.title, error: err, http_status: gateRes.status },
       30,
       `PR #${pr.number} gate ERROR`,
     );
-    console.log(`kater-bridge: PR #${pr.number} gate error`, gate.error);
+    console.log(`kater-bridge: PR #${pr.number} gate error`, err);
     return;
   }
 
-  const verdict = gate?.verdict || (gate?.merge_ready ? "PASS" : gate?.error ? "ERROR" : "UNKNOWN");
+  const verdict =
+    gate.verdict ||
+    (gate.merge_ready === true ? "PASS" : gate.merge_ready === false ? "FAIL" : gate.error ? "ERROR" : "ERROR");
   const data = {
     branch,
     pr_number: pr.number,

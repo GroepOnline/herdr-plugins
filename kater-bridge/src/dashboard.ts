@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadDotEnv, writeFragment, katerGet, summarizeDoctor, PLUGIN_ID } from "./common";
+import { loadDotEnv, writeFragment, katerGet, summarizeDoctor, summarizeFleet, PLUGIN_ID } from "./common";
 import { katerCallTool } from "./mcp";
 
 loadDotEnv();
@@ -15,9 +15,7 @@ async function main() {
   const gatewayOk = health?.status === "ok";
   const findings = doctor?.findings || [];
   const summary = summarizeDoctor(findings);
-  const nodes = inventory?.nodes || [];
-  const okCount = inventory?.status_counts?.ok ?? nodes.filter(n => (n.status || "").toLowerCase() === "ok").length;
-  const total = inventory?.node_count ?? nodes.length;
+  const fleet = summarizeFleet(inventory);
 
   const data = {
     gateway_ok: gatewayOk,
@@ -29,14 +27,10 @@ async function main() {
       severity_counts: summary.counts,
       top_findings: summary.top_messages,
     },
-    fleet: {
-      node_count: total,
-      ok: okCount,
-      nodes: nodes.slice(0, 8).map(n => ({ name: n.hostname || n.name, status: n.status })),
-    },
+    fleet,
   };
 
-  const fleetBit = inventory ? ` · ${okCount}/${total} nodes ok` : "";
+  const fleetBit = inventory ? ` · ${fleet.ok}/${fleet.node_count} nodes ok` : "";
   const display = gatewayOk
     ? `Utrecht Fleet · Kater ${data.profile} · doctor ${findings.length} finding(s)${fleetBit}`
     : "Utrecht Fleet · Kater offline";

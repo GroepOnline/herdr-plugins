@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadDotEnv, writeFragment, runReaper, reaperPath, PLUGIN_ID } from "./common";
+import { loadDotEnv, writeFragment, runReaper, reaperPath, isLiveMode, PLUGIN_ID } from "./common";
 
 loadDotEnv();
 
@@ -18,8 +18,7 @@ async function main() {
     event?.pane?.pane_id ||
     process.env.HERDR_PANE_ID ||
     "unknown";
-  const live = (process.env.REAPER_LIVE || "").trim() === "1";
-  const dryRun = !live;
+  const dryRun = !isLiveMode();
 
   const result = runReaper(dryRun);
   const lines = result.output.split("\n").filter(Boolean);

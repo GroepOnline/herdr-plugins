@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadDotEnv, writeFragment, katerGet, summarizeDoctor, PLUGIN_ID } from "./common";
+import { loadDotEnv, writeFragment, katerGet, summarizeDoctor, findingSeverity, PLUGIN_ID } from "./common";
 import { katerCallTool } from "./mcp";
 
 loadDotEnv();
@@ -14,7 +14,8 @@ async function main() {
     katerCallTool<Record<string, unknown>>("utrecht_status", {}),
   ]);
 
-  if (!doctor && !pipeline && !utrechtStatus) {
+  const doctorReached = doctor !== null;
+  if (!doctorReached && !pipeline && !utrechtStatus) {
     writeFragment(PLUGIN_ID, "kater-doctor", { error: "Kater doctor and Utrecht MCP tools unreachable" }, 30);
     console.log("kater-bridge: pipeline health unreachable");
     return;
@@ -22,8 +23,8 @@ async function main() {
 
   const findings = doctor?.findings || [];
   const summary = summarizeDoctor(findings);
-  const hasBlockers = findings.some(f => f.severity === "error");
-  const hasWarnings = findings.some(f => f.severity === "warning");
+  const hasBlockers = findings.some(f => findingSeverity(f) === "error");
+  const hasWarnings = findings.some(f => findingSeverity(f) === "warning");
 
   const data = {
     profiles: doctor?.profiles || [],
@@ -31,20 +32,28 @@ async function main() {
     severity_counts: summary.counts,
     top_findings: summary.top_messages,
     findings: findings.slice(0, 10),
-    healthy: !hasBlockers && !hasWarnings,
+    doctor_reached: doctorReached,
+    healthy: doctorReached && !hasBlockers && !hasWarnings,
     utrecht_pipeline: pipeline,
     utrecht_status: utrechtStatus,
     pipeline_source: pipeline ? "mcp:utrecht_pipeline_status" : null,
   };
 
-  const pipeHint = pipeline && typeof pipeline === "object" && "status" in pipeline
-    ? ` · pipeline ${String((pipeline as { status?: string }).status)}`
-    : "";
-  const display = hasBlockers
-    ? `Kater doctor: ${summary.counts.error} error(s)${pipeHint}`
-    : hasWarnings
-      ? `Kater doctor: ${summary.counts.warning} warning(s)${pipeHint}`
-      : `Kater doctor: OK${pipeHint}`;
+  const pipeHint =
+    pipeline && typeof pipeline === "object" && "status" in pipeline
+      ? ` · pipeline ${String((pipeline as { status?: string }).status)}`
+      : "";
+
+  let display: string;
+  if (!doctorReached) {
+    display = `Kater doctor: unreachable${pipeHint}`;
+  } else if (hasBlockers) {
+    display = `Kater doctor: ${summary.counts.error} error(s)${pipeHint}`;
+  } else if (hasWarnings) {
+    display = `Kater doctor: ${summary.counts.warning} warning(s)${pipeHint}`;
+  } else {
+    display = `Kater doctor: OK${pipeHint}`;
+  }
 
   writeFragment(PLUGIN_ID, "kater-doctor", data, 120, display);
   console.log(`kater-bridge: ${display}`);

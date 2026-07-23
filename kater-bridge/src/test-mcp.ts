@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Smoke test: MCP tool round-trip against local Kater gateway (non-CI). */
+import { loadDotEnv } from "./common";
 import { katerCallTool } from "./mcp";
+
+loadDotEnv();
 
 async function main() {
   const profiles = await katerCallTool<{ profiles?: string[] }>("kater_profiles", {});
