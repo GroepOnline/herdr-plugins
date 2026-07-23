@@ -39,7 +39,20 @@ async function main() {
   }
 
   const pulls = list?.pulls || [];
-  const pr = branch ? pulls.find(p => p.head_ref === branch) : pulls[0];
+
+  if (!branch) {
+    writeFragment(
+      PLUGIN_ID,
+      "kater-pr",
+      { error: "Cannot determine current git branch (detached HEAD or outside repo)", open_count: pulls.length },
+      30,
+      "PR gate: no git branch",
+    );
+    console.log("kater-bridge: pr-gate skipped (no git branch)");
+    return;
+  }
+
+  const pr = pulls.find(p => p.head_ref === branch);
 
   if (!pr) {
     writeFragment(PLUGIN_ID, "kater-pr", { branch, pr: null, open_count: pulls.length }, 60);
