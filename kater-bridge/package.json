@@ -1,0 +1,20 @@
+{
+  "name": "kater-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node -e \"console.log('kater-bridge: unit tests N/A (use npm run smoke for live gateway)')\"",
+    "smoke": "npm run build && node dist/test-mcp.js",
+    "fleet-status": "node dist/fleet-status.js",
+    "doctor": "node dist/pipeline.js",
+    "pr-gate": "node dist/pr-gate.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

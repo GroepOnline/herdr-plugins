@@ -1,0 +1,13 @@
+{
+  "name": "chef-pane-reaper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/reaper.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

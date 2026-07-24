@@ -37,6 +37,31 @@
         "fleet"
       ],
       "min_herdr_version": "0.7.6"
+    },
+    {
+      "id": "com.chefgroep.kater-bridge",
+      "name": "Kater MCP Bridge",
+      "version": "0.2.0",
+      "description": "Gateway health, doctor, PR-gate (REST) and Utrecht fleet/pipeline/ask (MCP SSE)",
+      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/kater-bridge",
+      "categories": [
+        "productivity",
+        "kater",
+        "utrecht"
+      ],
+      "min_herdr_version": "0.7.3"
+    },
+    {
+      "id": "com.chefgroep.pane-reaper",
+      "name": "Pane Exit Reaper",
+      "version": "0.1.0",
+      "description": "Invoke ghost-reaper on pane.exited to clean orphaned agent/MCP processes",
+      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-pane-reaper",
+      "categories": [
+        "productivity",
+        "ops"
+      ],
+      "min_herdr_version": "0.7.3"
     }
   ]
 }

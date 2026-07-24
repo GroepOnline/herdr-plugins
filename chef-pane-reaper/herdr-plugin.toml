@@ -1,0 +1,23 @@
+id = "com.chefgroep.pane-reaper"
+name = "Pane Exit Reaper"
+version = "0.1.0"
+min_herdr_version = "0.7.3"
+description = "On pane.exited, run the ghost-reaper hook to clean orphaned agent/MCP child processes"
+platforms = ["linux"]
+
+[[build]]
+command = ["npm", "install"]
+
+[[build]]
+command = ["npm", "run", "build"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "dist/reap-on-exit.js"]
+
+[[actions]]
+id = "reap-now"
+title = "Run Ghost Reaper"
+description = "Manually invoke ghost-reaper (dry-run unless REAPER_LIVE=1 in plugin .env)"
+contexts = ["global"]
+command = ["node", "dist/reap-on-exit.js"]

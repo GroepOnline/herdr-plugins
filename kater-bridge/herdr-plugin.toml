@@ -1,0 +1,50 @@
+id = "com.chefgroep.kater-bridge"
+name = "Kater MCP Bridge"
+version = "0.2.0"
+min_herdr_version = "0.7.3"
+description = "Bridge to Kater MCP Gateway — REST health/doctor/PR-gate plus Utrecht MCP tools via SSE"
+platforms = ["linux"]
+
+[[build]]
+command = ["npm", "install"]
+
+[[build]]
+command = ["npm", "run", "build"]
+
+[[actions]]
+id = "fleet-status"
+title = "Fleet Status"
+description = "Gateway health and server inventory from Kater REST"
+contexts = ["global", "workspace"]
+command = ["node", "dist/fleet-status.js"]
+
+[[actions]]
+id = "pipeline-health"
+title = "Pipeline Health"
+description = "Kater doctor diagnostics summary"
+contexts = ["global"]
+command = ["node", "dist/pipeline.js"]
+
+[[actions]]
+id = "pr-gate"
+title = "PR Gate Verdict"
+description = "Merge-gate verdict (PASS/WARN/BLOCK) for the current branch via Kater"
+contexts = ["workspace"]
+command = ["node", "dist/pr-gate.js"]
+
+[[actions]]
+id = "query"
+title = "Query Utrecht Data"
+description = "Natural language query via Kater (MCP-only in v0.1; pane context stub)"
+contexts = ["pane"]
+command = ["node", "dist/query.js"]
+
+[[panes]]
+id = "fleet-dashboard"
+title = "Utrecht Fleet"
+placement = "tab"
+command = ["node", "dist/dashboard.js"]
+
+[[events]]
+on = "workspace.focused"
+command = ["node", "dist/refresh.js"]
