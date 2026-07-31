@@ -17,15 +17,36 @@ async function main() {
         query: `query {\n  viewer {\n    assignedIssues(filter: { state: { type: { nin: ["completed", "canceled"] } } }, first: 50) {\n      nodes { identifier title state { name } priority }\n    }\n  }\n}`,
       }),
     });
-    const json = await res.json();
-    const gqlErrors = json.errors;
+    let json: any;
+    try {
+      json = await res.json();
+    } catch (e: any) {
+      const message = `HTTP ${res.status}: invalid JSON response (${e?.message || e})`;
+      writeFragment(PLUGIN_ID, "linear", { error: message }, 120);
+      console.error(`linear-context: ${message}`);
+      return;
+    }
+    const gqlErrors = json?.errors;
     if (gqlErrors && gqlErrors.length > 0) {
       const messages = gqlErrors.map((e: any) => e.message).join("; ");
       writeFragment(PLUGIN_ID, "linear", { error: `GraphQL: ${messages}`, gql_errors: gqlErrors }, 120);
-      console.error(`linear-context: GraphQL error — ${messages}`);
+      console.error(`linear-context: GraphQL error: ${messages}`);
       return;
     }
-    issues = (json.data?.viewer?.assignedIssues?.nodes) || [];
+    if (!res.ok) {
+      const message = `HTTP ${res.status} ${res.statusText}`.trim();
+      writeFragment(PLUGIN_ID, "linear", { error: message }, 120);
+      console.error(`linear-context: request failed: ${message}`);
+      return;
+    }
+    const nodes = json?.data?.viewer?.assignedIssues?.nodes;
+    if (!Array.isArray(nodes)) {
+      const message = "unexpected response shape: missing viewer.assignedIssues.nodes";
+      writeFragment(PLUGIN_ID, "linear", { error: message }, 120);
+      console.error(`linear-context: ${message}`);
+      return;
+    }
+    issues = nodes;
     cacheSet(cacheKey, issues, 120);
   }
   writeFragment(PLUGIN_ID, "linear", { assigned_open: issues.length, issues: issues.map((i: any) => ({ id: i.identifier, title: i.title, state: i.state?.name })) }, 120);
