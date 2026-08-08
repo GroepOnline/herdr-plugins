@@ -5,7 +5,7 @@
       "name": "Linear Issue Context",
       "version": "0.2.0",
       "description": "Fetch Linear issue metadata into the Fleet Ops Bar",
-      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-linear-context",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/chef-linear-context",
       "categories": [
         "productivity",
         "linear"
@@ -17,7 +17,7 @@
       "name": "GitHub PR/CI Status",
       "version": "0.2.0",
       "description": "Poll PR status and CI check results from GitHub",
-      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-github-status",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/chef-github-status",
       "categories": [
         "productivity",
         "github"
@@ -29,7 +29,7 @@
       "name": "Pi Session Eval",
       "version": "0.1.0",
       "description": "Ingest Pi agent sessions, score model/tool health, and auto-evaluate against free models via OmniRoute",
-      "homepage": "https://github.com/OnlineChefGroep/chef-pi-eval",
+      "homepage": "https://github.com/GroepOnline/chef-pi-eval",
       "categories": [
         "observability",
         "evaluation",
@@ -43,7 +43,7 @@
       "name": "Kater MCP Bridge",
       "version": "0.2.0",
       "description": "Gateway health, doctor, PR-gate (REST) and Utrecht fleet/pipeline/ask (MCP SSE)",
-      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/kater-bridge",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/kater-bridge",
       "categories": [
         "productivity",
         "kater",
@@ -56,7 +56,7 @@
       "name": "Pane Exit Reaper",
       "version": "0.1.0",
       "description": "Invoke ghost-reaper on pane.exited to clean orphaned agent/MCP processes",
-      "homepage": "https://github.com/OnlineChefGroep/herdr-plugins/tree/main/chef-pane-reaper",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/chef-pane-reaper",
       "categories": [
         "productivity",
         "ops"

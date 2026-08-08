@@ -1,6 +1,6 @@
 # Pane Exit Reaper
 
-Herdr plugin that invokes [`ghost-reaper.sh`](https://github.com/OnlineChefGroep/.cursor/blob/main/hooks/ghost-reaper.sh) when a terminal pane exits, cleaning orphaned Cursor-agent and MCP child processes.
+Herdr plugin that invokes [`ghost-reaper.sh`](https://github.com/GroepOnline/.cursor/blob/main/hooks/ghost-reaper.sh) when a terminal pane exits, cleaning orphaned Cursor-agent and MCP child processes.
 
 ## Events
 
