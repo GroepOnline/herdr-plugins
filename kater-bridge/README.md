@@ -2,7 +2,7 @@
 
 Herdr plugin that exposes the local [Kater MCP Gateway](http://127.0.0.1:9091) as Fleet Ops Bar fragments and actions.
 
-Design reference: [CHEF-KATER-BRIDGE-DESIGN.md](https://github.com/OnlineChefGroep/herdr/blob/main/docs/CHEF-KATER-BRIDGE-DESIGN.md) in the herdr repo.
+Design reference: [CHEF-KATER-BRIDGE-DESIGN.md](https://github.com/GroepOnline/herdr/blob/main/docs/CHEF-KATER-BRIDGE-DESIGN.md) in the herdr repo.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ npm run fleet-status        # writes fragment to $HERDR_PLUGIN_STATE_DIR
 ## Version history
 
 - **v0.2.0** — MCP SSE client (`@modelcontextprotocol/sdk`) for Utrecht tools: fleet inventory, pipeline status, natural-language ask.
-- **v0.1.0** — REST-only gateway health, doctor, PR gate (see [PR #2](https://github.com/OnlineChefGroep/herdr-plugins/pull/2), operator-gated merge).
+- **v0.1.0** — REST-only gateway health, doctor, PR gate (see [PR #2](https://github.com/GroepOnline/herdr-plugins/pull/2), operator-gated merge).
 
 ## Not yet implemented (design)
 
