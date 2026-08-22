@@ -25,3 +25,9 @@ title = "Stop bridge"
 description = "Stop a running serve instance via pidfile"
 contexts = ["global"]
 command = ["node", "src/mcp-server.js", "stop"]
+
+[[panes]]
+id = "bridge"
+title = "ChatGPT Bridge"
+placement = "tab"
+command = ["node", "src/mcp-server.js", "serve"]

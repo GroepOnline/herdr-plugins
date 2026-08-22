@@ -205,6 +205,14 @@ async function handleRpc(msg) {
 function startHttp() {
   const port = Number(process.env.CHEF_CHATGPT_PORT || PORT_DEFAULT);
   const token = process.env.CHEF_CHATGPT_TOKEN || "";
+  const bind = process.env.CHEF_CHATGPT_BIND || "127.0.0.1";
+  const loopback = /^(127\.|::1$|localhost$)/.test(bind);
+  // Non-loopback binds are only for the tunnel origin path — and must carry a token.
+  if (!loopback && !token) {
+    throw new Error(
+      "refusing to bind non-loopback without CHEF_CHATGPT_TOKEN; set a token or keep 127.0.0.1",
+    );
+  }
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -245,9 +253,9 @@ function startHttp() {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(body);
   });
-  return new Promise((resolve) => {
-    // Loopback only: publishing happens via a tunnel/gateway, never a wide bind.
-    server.listen(port, "127.0.0.1", () => resolve(server));
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, bind, () => resolve(server));
   });
 }
 
@@ -282,6 +290,7 @@ async function doctor() {
         version: VERSION,
         write_enabled: allowWrite(),
         token_required: Boolean(process.env.CHEF_CHATGPT_TOKEN),
+        bind: process.env.CHEF_CHATGPT_BIND || "127.0.0.1",
         herdr_reachable: snap.ok,
         tools: allTools().map((t) => t.name),
         hint: allowWrite()
@@ -322,7 +331,8 @@ async function main() {
         await mkdir(dir, { recursive: true }).catch(() => {});
         await writeFile(path.join(dir, "chatgpt-bridge.pid"), `${process.pid}\n`).catch(() => {});
       }
-      console.log(JSON.stringify({ ok: true, listening: `http://127.0.0.1:${port}/mcp`, pid: process.pid }));
+      const addr = server.address();
+      console.log(JSON.stringify({ ok: true, listening: `http://${addr.address}:${addr.port}/mcp`, pid: process.pid }));
       break;
     }
     case "stdio":
