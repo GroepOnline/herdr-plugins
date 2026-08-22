@@ -1,1 +1,0 @@
-{"request":{"responseType":"code","clientId":"tzu7lfyBpSOBVbJh","redirectUri":"https://chatgpt.com/connector_mcp/oauth/callback","scope":["herdr:write"],"state":"s2","codeChallenge":"iMWMIlvwYfHfCNBHNuvPL585L_Ezk90EL2cVVJuyNPY","codeChallengeMethod":"S256","resource":"https://localhost:8787/mcp","issuer":"https://localhost:8787"},"clientName":"ChatGPT-Test"}
