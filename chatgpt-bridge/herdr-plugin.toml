@@ -1,6 +1,6 @@
 id = "com.chefgroep.chatgpt-bridge"
 name = "ChatGPT Bridge"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.5"
 description = "Expose Herdr sessions/panes/agents as a local remote-MCP endpoint for ChatGPT (read-only by default)"
 platforms = ["linux", "macos", "windows"]
@@ -18,6 +18,13 @@ title = "Bridge status"
 description = "Show tool inventory, write-gate state and herdr reachability"
 contexts = ["global", "workspace"]
 command = ["node", "src/mcp-server.js", "doctor"]
+
+[[actions]]
+id = "capture-focused"
+title = "Capture focused agent output"
+description = "Save bounded and redacted output from the focused Herdr/Cursor agent"
+contexts = ["global", "workspace", "pane"]
+command = ["node", "src/mcp-server.js", "capture-focused"]
 
 [[actions]]
 id = "stop"
