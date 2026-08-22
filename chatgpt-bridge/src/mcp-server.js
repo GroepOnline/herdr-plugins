@@ -15,18 +15,20 @@
  *   - HTTP binds 127.0.0.1 only. Set CHEF_CHATGPT_TOKEN to require
  *     `Authorization: Bearer <token>` on every request.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const NAME = "herdr-chatgpt-bridge";
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const PROTOCOL_VERSION = "2025-06-18";
 const PORT_DEFAULT = 8791;
 const CMD_TIMEOUT_MS = 20_000;
 const CAPTURE_MAX_BYTES = 256 * 1024;
+const BRIDGE_PID_FILE = "chatgpt-bridge.pid";
+const BRIDGE_START_TIMEOUT_MS = 3_000;
 
 const allowWrite = () => process.env.CHEF_CHATGPT_ALLOW_WRITE === "1";
 
@@ -431,14 +433,159 @@ async function startStdio() {
   }
 }
 
+function bridgeStateDir() {
+  const dir = process.env.HERDR_PLUGIN_STATE_DIR;
+  if (!dir) throw new Error("HERDR_PLUGIN_STATE_DIR is required");
+  return dir;
+}
+
+function bridgePidPath(dir) {
+  return path.join(dir, BRIDGE_PID_FILE);
+}
+
+async function readManagedPid(dir) {
+  try {
+    const pid = Number((await readFile(bridgePidPath(dir), "utf8")).trim());
+    if (Number.isInteger(pid) && pid > 0) return pid;
+    await unlink(bridgePidPath(dir)).catch(() => {});
+    return null;
+  } catch (err) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
+}
+
+function bridgeEndpoint() {
+  const bind = process.env.CHEF_CHATGPT_BIND || "127.0.0.1";
+  const port = Number(process.env.CHEF_CHATGPT_PORT || PORT_DEFAULT);
+  return { bind, port, url: `http://${bind}:${port}/mcp` };
+}
+
+async function bridgeHealth(timeoutMs = 600) {
+  const { bind, port } = bridgeEndpoint();
+  const host = bind === "0.0.0.0" ? "127.0.0.1" : bind === "::" ? "::1" : bind;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const req = http.get({ host, port, path: "/healthz" }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          finish(res.statusCode === 200 && body?.ok === true && body?.name === NAME);
+        } catch {
+          finish(false);
+        }
+      });
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("health timeout")));
+    req.on("error", () => finish(false));
+  });
+}
+
+async function waitForBridgeHealth(timeoutMs = BRIDGE_START_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await bridgeHealth()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  } while (Date.now() < deadline);
+  return false;
+}
+
+async function serveForeground() {
+  const dir = bridgeStateDir();
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const server = await startHttp();
+  await writeFile(bridgePidPath(dir), `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
+  const addr = server.address();
+  const cleanupAndExit = () => {
+    server.close(() => {
+      unlink(bridgePidPath(dir)).catch(() => {}).finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(0), 1_000).unref();
+  };
+  process.once("SIGTERM", cleanupAndExit);
+  process.once("SIGINT", cleanupAndExit);
+  console.log(JSON.stringify({
+    ok: true,
+    listening: `http://${addr.address}:${addr.port}/mcp`,
+    pid: process.pid,
+    managed: true,
+  }));
+}
+
+async function serveManaged() {
+  const dir = bridgeStateDir();
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const existingPid = await readManagedPid(dir);
+  if (existingPid && processAlive(existingPid)) {
+    if (await bridgeHealth()) {
+      console.log(JSON.stringify({
+        ok: true,
+        already_running: true,
+        managed: true,
+        pid: existingPid,
+        listening: bridgeEndpoint().url,
+      }));
+      return;
+    }
+    throw new Error(`managed bridge pid ${existingPid} is alive but its health check failed`);
+  }
+  if (existingPid) await unlink(bridgePidPath(dir)).catch(() => {});
+  if (await bridgeHealth()) {
+    throw new Error("bridge endpoint is already occupied by an unmanaged bridge; stop it before starting a managed instance");
+  }
+
+  const child = spawn(process.execPath, [process.argv[1], "serve-foreground"], {
+    cwd: process.cwd(),
+    env: process.env,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+  if (!(await waitForBridgeHealth())) {
+    if (processAlive(child.pid)) process.kill(child.pid, "SIGTERM");
+    throw new Error("managed bridge did not become healthy after start");
+  }
+  const pid = (await readManagedPid(dir)) || child.pid;
+  console.log(JSON.stringify({
+    ok: true,
+    started: true,
+    managed: true,
+    pid,
+    listening: bridgeEndpoint().url,
+  }));
+}
+
 async function doctor() {
   const snap = await herdr(["api", "snapshot"]);
+  const dir = process.env.HERDR_PLUGIN_STATE_DIR;
+  const managedPid = dir ? await readManagedPid(dir) : null;
+  const running = await bridgeHealth();
   console.log(
     JSON.stringify(
       {
         ok: true,
         name: NAME,
         version: VERSION,
+        bridge_running: running,
+        managed_pid: managedPid && processAlive(managedPid) ? managedPid : null,
+        endpoint: bridgeEndpoint().url,
         write_enabled: allowWrite(),
         token_required: Boolean(process.env.CHEF_CHATGPT_TOKEN),
         bind: process.env.CHEF_CHATGPT_BIND || "127.0.0.1",
@@ -455,37 +602,45 @@ async function doctor() {
 }
 
 async function stop() {
-  const dir = process.env.HERDR_PLUGIN_STATE_DIR;
-  if (!dir) throw new Error("HERDR_PLUGIN_STATE_DIR is required");
-  try {
-    const pid = Number((await readFile(path.join(dir, "chatgpt-bridge.pid"), "utf8")).trim());
-    if (Number.isFinite(pid)) process.kill(pid, "SIGTERM");
-    await unlink(path.join(dir, "chatgpt-bridge.pid")).catch(() => {});
-    console.log(JSON.stringify({ ok: true, stopped: pid }));
-  } catch (err) {
-    if (err?.code === "ENOENT") {
-      console.log(JSON.stringify({ ok: true, stopped: null, note: "not running" }));
-      return;
-    }
-    throw err;
+  const dir = bridgeStateDir();
+  const pid = await readManagedPid(dir);
+  if (!pid) {
+    console.log(JSON.stringify({ ok: true, stopped: null, note: "not running" }));
+    return;
   }
+  if (!processAlive(pid)) {
+    await unlink(bridgePidPath(dir)).catch(() => {});
+    console.log(JSON.stringify({ ok: true, stopped: null, stale_pid: pid, note: "not running" }));
+    return;
+  }
+  if (!(await bridgeHealth())) {
+    await unlink(bridgePidPath(dir)).catch(() => {});
+    console.log(JSON.stringify({
+      ok: true,
+      stopped: null,
+      stale_pid: pid,
+      note: "pidfile did not point to a healthy ChatGPT bridge; process left untouched",
+    }));
+    return;
+  }
+  process.kill(pid, "SIGTERM");
+  const deadline = Date.now() + 2_000;
+  while (processAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await unlink(bridgePidPath(dir)).catch(() => {});
+  console.log(JSON.stringify({ ok: true, stopped: pid, exited: !processAlive(pid) }));
 }
 
 async function main() {
   const mode = process.argv[2] || "doctor";
   switch (mode) {
-    case "serve": {
-      const server = await startHttp();
-      const port = server.address().port;
-      const dir = process.env.HERDR_PLUGIN_STATE_DIR;
-      if (dir) {
-        await mkdir(dir, { recursive: true }).catch(() => {});
-        await writeFile(path.join(dir, "chatgpt-bridge.pid"), `${process.pid}\n`).catch(() => {});
-      }
-      const addr = server.address();
-      console.log(JSON.stringify({ ok: true, listening: `http://${addr.address}:${addr.port}/mcp`, pid: process.pid }));
+    case "serve":
+      await serveManaged();
       break;
-    }
+    case "serve-foreground":
+      await serveForeground();
+      break;
     case "stdio":
       await startStdio();
       break;
