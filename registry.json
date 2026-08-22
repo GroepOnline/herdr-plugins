@@ -139,7 +139,7 @@
     {
       "id": "com.chefgroep.chatgpt-bridge",
       "name": "ChatGPT Bridge",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "description": "Expose Herdr sessions/panes/agents as a local remote-MCP endpoint for ChatGPT (read-only by default)",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/chatgpt-bridge",
       "categories": [

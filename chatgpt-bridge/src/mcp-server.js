@@ -22,7 +22,7 @@ import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const NAME = "herdr-chatgpt-bridge";
-const VERSION = "0.2.1";
+const VERSION = "0.2.2";
 const PROTOCOL_VERSION = "2025-06-18";
 const PORT_DEFAULT = 8791;
 const CMD_TIMEOUT_MS = 20_000;
@@ -94,17 +94,64 @@ function boundedTail(value) {
   return raw.subarray(start).toString("utf8");
 }
 
-async function focusedPaneId() {
+function selectCaptureAgent(snapshot, target = "") {
+  const panes = snapshot.panes ?? [];
+  const agents = snapshot.agents ?? [];
+  if (!agents.length) throw new Error("no Herdr agent panes found");
+
+  const requested = target ? safePaneId(target) : "";
+  const focused = panes.find((pane) => pane.focused);
+  const directPaneId = requested || focused?.pane_id || "";
+  const direct = agents.find((agent) => agent.pane_id === directPaneId);
+  if (direct?.pane_id) return safePaneId(direct.pane_id);
+
+  const contextPane = panes.find((pane) => pane.pane_id === requested) || focused;
+  const statusRank = {
+    working: 5,
+    running: 5,
+    waiting: 4,
+    needs_input: 4,
+    idle: 3,
+    done: 2,
+    unknown: 1,
+  };
+  const ranked = [...agents].sort((left, right) => {
+    const affinity = (agent) => {
+      if (!contextPane) return 0;
+      if (agent.tab_id === contextPane.tab_id) return 2;
+      if (agent.workspace_id === contextPane.workspace_id) return 1;
+      return 0;
+    };
+    const leftKey = [
+      affinity(left),
+      statusRank[left.agent_status] ?? 0,
+      Number(left.state_change_seq ?? 0),
+      Number(left.revision ?? 0),
+    ];
+    const rightKey = [
+      affinity(right),
+      statusRank[right.agent_status] ?? 0,
+      Number(right.state_change_seq ?? 0),
+      Number(right.revision ?? 0),
+    ];
+    for (let index = 0; index < leftKey.length; index += 1) {
+      if (leftKey[index] !== rightKey[index]) return rightKey[index] - leftKey[index];
+    }
+    return String(left.pane_id).localeCompare(String(right.pane_id));
+  });
+  if (!ranked[0]?.pane_id) throw new Error("no suitable Herdr agent pane found");
+  return safePaneId(ranked[0].pane_id);
+}
+
+async function capturePaneId(target = "") {
   const res = await herdr(["api", "snapshot"]);
   if (!res.ok) throw new Error(res.error || res.stderr || "Herdr snapshot failed");
   const snapshot = JSON.parse(res.stdout)?.result?.snapshot ?? {};
-  const focused = (snapshot.panes ?? []).find((pane) => pane.focused);
-  if (!focused?.pane_id) throw new Error("no focused Herdr pane found");
-  return safePaneId(focused.pane_id);
+  return selectCaptureAgent(snapshot, target);
 }
 
 async function captureAgent(target = "") {
-  const pane = target ? safePaneId(target) : await focusedPaneId();
+  const pane = await capturePaneId(target);
   const res = await herdr([
     "agent", "read", pane,
     "--source", "recent-unwrapped",
@@ -172,6 +219,23 @@ function selftest() {
   safePaneId("w3Q:p1");
   if (actionPaneTarget({ HERDR_PANE_ID: "w3Q:p2" }) !== "w3Q:p2" || actionPaneTarget({}) !== "") {
     throw new Error("capture action pane-context selftest failed");
+  }
+  const captureFixture = {
+    panes: [
+      { pane_id: "w3Q:p2", tab_id: "w3Q:t2", workspace_id: "w3Q", focused: true },
+      { pane_id: "w3Q:p1", tab_id: "w3Q:t1", workspace_id: "w3Q", focused: false },
+      { pane_id: "w9X:p1", tab_id: "w9X:t1", workspace_id: "w9X", focused: false },
+    ],
+    agents: [
+      { pane_id: "w3Q:p1", tab_id: "w3Q:t1", workspace_id: "w3Q", agent_status: "done", state_change_seq: 20 },
+      { pane_id: "w9X:p1", tab_id: "w9X:t1", workspace_id: "w9X", agent_status: "working", state_change_seq: 99 },
+    ],
+  };
+  if (selectCaptureAgent(captureFixture, "w3Q:p2") !== "w3Q:p1") {
+    throw new Error("capture workspace fallback selftest failed");
+  }
+  if (selectCaptureAgent(captureFixture, "w3Q:p1") !== "w3Q:p1") {
+    throw new Error("capture direct-agent selftest failed");
   }
   try {
     safePaneId("../../bad");
