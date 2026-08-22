@@ -14,10 +14,13 @@ jobs:
       - name: Syntax-check JS plugin sources
         run: |
           fail=0
-          for f in */src/index.js; do
+          for f in */src/index.js chatgpt-bridge/src/mcp-server.js; do
+            [ -f "$f" ] || continue
             node --check "$f" || fail=1
           done
           exit $fail
+      - name: chatgpt-bridge capture selftest
+        run: node chatgpt-bridge/src/mcp-server.js selftest
   typescript:
     runs-on: ubuntu-latest
     strategy:

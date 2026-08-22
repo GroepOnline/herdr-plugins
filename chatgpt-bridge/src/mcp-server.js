@@ -55,7 +55,16 @@ function redactCapture(input) {
     });
   };
   replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED PRIVATE KEY]");
+  // Authorization: Bearer|Basic <token>
   replace(/\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, (match, prefix) => `${prefix}[REDACTED]`);
+  // Standalone Bearer <token> (incl. JWT) — skip already-redacted
+  replace(/\b(Bearer\s+)(?!\[REDACTED\])[^\s]+/g, (match, prefix) => `${prefix}[REDACTED]`);
+  // Compact JWTs not already caught by Bearer
+  replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED JWT]");
+  // JSON "api_key": "..." / "apiKey": "..." and related secret fields
+  replace(/("(api[_-]?key|apiKey|access[_-]?token|client[_-]?secret|secret|password|token)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, (match, prefix) => `${prefix}"[REDACTED]"`);
+  // Env-style OPENAI_API_KEY= / AWS_SECRET_ACCESS_KEY= / *_TOKEN= etc.
+  replace(/\b([A-Z][A-Z0-9_]*(?:API[_-]?KEY|SECRET(?:[_-]?ACCESS)?[_-]?KEY|ACCESS[_-]?KEY(?:[_-]?ID)?|CLIENT[_-]?SECRET|SECRET|TOKEN|PASSWORD|PASSWD))(\s*=\s*)["']?[^\s"']+/g, (match, key, separator) => `${key}${separator}[REDACTED]`);
   replace(/\b(api[_-]?key|token|secret|password|passwd|client[_-]?secret)(\s*[:=]\s*)["']?[^\s"']+/gi, (match, key, separator) => `${key}${separator}[REDACTED]`);
   replace(/\b(ghp_|github_pat_|sk-|xox[baprs]-)[A-Za-z0-9_-]{12,}\b/g, (match, prefix) => `${prefix}[REDACTED]`);
   replace(/:\/\/[^\s/@:]+:[^\s/@]+@/g, "://[REDACTED]@");
@@ -144,9 +153,14 @@ function selftest() {
     "API_KEY=super-secret-value",
     "github_pat_abcdefghijklmnopqrstuvwxyz",
     "https://user:password@example.invalid/path",
+    '{"api_key":"json-secret-value-xyz"}',
+    "OPENAI_API_KEY=openai-secret-value-xyz",
+    "AWS_SECRET_ACCESS_KEY=aws-secret-value-xyz",
+    "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
   ].join("\n");
   const result = redactCapture(sample);
-  if (result.redactions !== 4 || /super-secret-value|abcdefghijklmnop|password@example/.test(result.text)) {
+  const leaked = /super-secret-value|abcdefghijklmnop|password@example|json-secret-value-xyz|openai-secret-value-xyz|aws-secret-value-xyz|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9/.test(result.text);
+  if (result.redactions < 8 || leaked) {
     throw new Error("capture redaction selftest failed");
   }
   const bounded = boundedTail(`a😀${"b".repeat(CAPTURE_MAX_BYTES - 2)}`);
