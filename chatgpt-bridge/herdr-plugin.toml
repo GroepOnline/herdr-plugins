@@ -1,0 +1,27 @@
+id = "com.chefgroep.chatgpt-bridge"
+name = "ChatGPT Bridge"
+version = "0.1.0"
+min_herdr_version = "0.7.5"
+description = "Expose Herdr sessions/panes/agents as a local remote-MCP endpoint for ChatGPT (read-only by default)"
+platforms = ["linux", "macos", "windows"]
+
+[[actions]]
+id = "serve"
+title = "Serve MCP bridge"
+description = "Start the MCP server on 127.0.0.1:8791 (CHEF_CHATGPT_PORT to override)"
+contexts = ["global"]
+command = ["node", "src/mcp-server.js", "serve"]
+
+[[actions]]
+id = "status"
+title = "Bridge status"
+description = "Show tool inventory, write-gate state and herdr reachability"
+contexts = ["global", "workspace"]
+command = ["node", "src/mcp-server.js", "doctor"]
+
+[[actions]]
+id = "stop"
+title = "Stop bridge"
+description = "Stop a running serve instance via pidfile"
+contexts = ["global"]
+command = ["node", "src/mcp-server.js", "stop"]
