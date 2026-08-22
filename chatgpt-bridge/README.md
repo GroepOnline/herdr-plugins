@@ -10,6 +10,7 @@ Nul dependencies — alleen Node 20+ en de `herdr` CLI.
 |---|---|---|
 | `herdr_snapshot` | read | Live workspaces/tabs/panes/agents met ids, status en cwd |
 | `herdr_read_agent` | read | Recente terminal-output van één agent/pane |
+| `herdr_capture_agent` | **write** | Begrensde en geredacteerde pane-output opslaan in de plugin export-map |
 | `herdr_prompt_agent` | **write** | Prompt submitten aan een draaiende agent |
 | `herdr_notify` | **write** | Desktop-notificatie via Herdr |
 
@@ -21,8 +22,15 @@ Nul dependencies — alleen Node 20+ en de `herdr` CLI.
 $ node src/mcp-server.js serve     # Streamable HTTP op http://127.0.0.1:8791/mcp
 $ node src/mcp-server.js stdio     # newline JSON-RPC op stdin/stdout (lokale MCP-clients)
 $ node src/mcp-server.js doctor    # tools + write-gate + herdr-bereikbaarheid
+$ node src/mcp-server.js capture-focused # gefocuste agent-output veilig vastleggen
+$ node src/mcp-server.js selftest  # redaction, pane-validatie en byte-cap
 $ node src/mcp-server.js stop      # serve stoppen via pidfile
 ```
+
+`capture-focused` is ook een Herdr plugin action. De action schrijft alleen naar
+`$HERDR_PLUGIN_STATE_DIR/exports`, atomair en met bestandsmodus `0600`. Output is
+begrensd op 256 KiB en veelvoorkomende credentials worden vóór het schrijven
+geredacteerd. De remote MCP-tool voor capture blijft onderdeel van de write-gate.
 
 ## Config
 

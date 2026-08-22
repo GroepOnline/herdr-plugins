@@ -16,15 +16,17 @@
  *     `Authorization: Bearer <token>` on every request.
  */
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const NAME = "herdr-chatgpt-bridge";
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const PROTOCOL_VERSION = "2025-06-18";
 const PORT_DEFAULT = 8791;
 const CMD_TIMEOUT_MS = 20_000;
+const CAPTURE_MAX_BYTES = 256 * 1024;
 
 const allowWrite = () => process.env.CHEF_CHATGPT_ALLOW_WRITE === "1";
 
@@ -42,6 +44,126 @@ function run(cmd, args, timeoutMs = CMD_TIMEOUT_MS) {
 
 async function herdr(args) {
   return run("herdr", args);
+}
+
+function redactCapture(input) {
+  let redactions = 0;
+  const replace = (pattern, replacement) => {
+    input = input.replace(pattern, (...args) => {
+      redactions += 1;
+      return typeof replacement === "function" ? replacement(...args) : replacement;
+    });
+  };
+  replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED PRIVATE KEY]");
+  replace(/\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, (match, prefix) => `${prefix}[REDACTED]`);
+  replace(/\b(api[_-]?key|token|secret|password|passwd|client[_-]?secret)(\s*[:=]\s*)["']?[^\s"']+/gi, (match, key, separator) => `${key}${separator}[REDACTED]`);
+  replace(/\b(ghp_|github_pat_|sk-|xox[baprs]-)[A-Za-z0-9_-]{12,}\b/g, (match, prefix) => `${prefix}[REDACTED]`);
+  replace(/:\/\/[^\s/@:]+:[^\s/@]+@/g, "://[REDACTED]@");
+  return { text: input, redactions };
+}
+
+function safePaneId(value) {
+  const pane = String(value || "");
+  if (!/^[A-Za-z0-9_-]+:p[0-9]+$/.test(pane)) {
+    throw new Error(`invalid pane id: ${pane || "<empty>"}`);
+  }
+  return pane;
+}
+
+function actionPaneTarget(env = process.env) {
+  return env.HERDR_PANE_ID ? safePaneId(env.HERDR_PANE_ID) : "";
+}
+
+function boundedTail(value) {
+  const raw = Buffer.from(String(value || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), "utf8");
+  if (raw.length <= CAPTURE_MAX_BYTES) return raw.toString("utf8");
+
+  let start = raw.length - CAPTURE_MAX_BYTES;
+  while (start < raw.length && (raw[start] & 0xc0) === 0x80) start += 1;
+  return raw.subarray(start).toString("utf8");
+}
+
+async function focusedPaneId() {
+  const res = await herdr(["api", "snapshot"]);
+  if (!res.ok) throw new Error(res.error || res.stderr || "Herdr snapshot failed");
+  const snapshot = JSON.parse(res.stdout)?.result?.snapshot ?? {};
+  const focused = (snapshot.panes ?? []).find((pane) => pane.focused);
+  if (!focused?.pane_id) throw new Error("no focused Herdr pane found");
+  return safePaneId(focused.pane_id);
+}
+
+async function captureAgent(target = "") {
+  const pane = target ? safePaneId(target) : await focusedPaneId();
+  const res = await herdr([
+    "agent", "read", pane,
+    "--source", "recent-unwrapped",
+    "--lines", "400",
+    "--format", "text",
+  ]);
+  if (!res.ok) throw new Error(res.error || res.stderr || "Herdr agent read failed");
+
+  const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
+  if (!stateDir) throw new Error("HERDR_PLUGIN_STATE_DIR is required for capture");
+  const exportDir = path.join(stateDir, "exports");
+  await mkdir(exportDir, { recursive: true, mode: 0o700 });
+
+  const capturedAt = new Date().toISOString();
+  const stamp = capturedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const fileName = `${stamp}-${pane.replace(":", "-")}-${randomUUID()}.md`;
+  const targetPath = path.join(exportDir, fileName);
+  const tmpPath = `${targetPath}.${randomUUID()}.tmp`;
+  const bounded = boundedTail(res.stdout);
+  const redacted = redactCapture(bounded);
+  const body = [
+    `# Herdr agent capture: ${pane}`,
+    "",
+    `- captured_at: ${capturedAt}`,
+    "- source: recent-unwrapped",
+    `- byte_cap: ${CAPTURE_MAX_BYTES}`,
+    `- redactions: ${redacted.redactions}`,
+    "",
+    "````text",
+    redacted.text.trimEnd(),
+    "````",
+    "",
+  ].join("\n");
+  await writeFile(tmpPath, body, { encoding: "utf8", mode: 0o600 });
+  await rename(tmpPath, targetPath);
+  return {
+    pane,
+    path: targetPath,
+    bytes: Buffer.byteLength(body),
+    redactions: redacted.redactions,
+    captured_at: capturedAt,
+  };
+}
+
+function selftest() {
+  const sample = [
+    "Authorization: Bearer abcdefghijklmnop",
+    "API_KEY=super-secret-value",
+    "github_pat_abcdefghijklmnopqrstuvwxyz",
+    "https://user:password@example.invalid/path",
+  ].join("\n");
+  const result = redactCapture(sample);
+  if (result.redactions !== 4 || /super-secret-value|abcdefghijklmnop|password@example/.test(result.text)) {
+    throw new Error("capture redaction selftest failed");
+  }
+  const bounded = boundedTail(`a😀${"b".repeat(CAPTURE_MAX_BYTES - 2)}`);
+  if (bounded.startsWith("�") || Buffer.byteLength(bounded) > CAPTURE_MAX_BYTES) {
+    throw new Error("capture byte-cap selftest failed");
+  }
+  safePaneId("w3Q:p1");
+  if (actionPaneTarget({ HERDR_PANE_ID: "w3Q:p2" }) !== "w3Q:p2" || actionPaneTarget({}) !== "") {
+    throw new Error("capture action pane-context selftest failed");
+  }
+  try {
+    safePaneId("../../bad");
+    throw new Error("pane validation selftest failed");
+  } catch (err) {
+    if (err.message === "pane validation selftest failed") throw err;
+  }
+  return { ok: true, redactions: result.redactions, cap_bytes: CAPTURE_MAX_BYTES };
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +226,21 @@ const READ_TOOLS = [
 ];
 
 const WRITE_TOOLS = [
+  {
+    name: "herdr_capture_agent",
+    description:
+      "Capture bounded, redacted recent output from a Herdr pane into the plugin export directory. Requires the bridge write gate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Pane id such as w3Q:p1; omit to use the focused pane" },
+      },
+      additionalProperties: false,
+    },
+    async run({ target }) {
+      return captureAgent(target ? String(target) : "");
+    },
+  },
   {
     name: "herdr_prompt_agent",
     description:
@@ -340,6 +477,16 @@ async function main() {
       break;
     case "doctor":
       await doctor();
+      break;
+    case "capture-focused":
+      console.log(JSON.stringify({
+        ok: true,
+        action: "capture-focused",
+        ...(await captureAgent(actionPaneTarget())),
+      }));
+      break;
+    case "selftest":
+      console.log(JSON.stringify(selftest()));
       break;
     case "stop":
       await stop();
