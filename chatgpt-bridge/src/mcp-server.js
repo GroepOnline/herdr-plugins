@@ -16,6 +16,7 @@
  *     `Authorization: Bearer <token>` on every request.
  */
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -54,9 +55,9 @@ function redactCapture(input) {
     });
   };
   replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED PRIVATE KEY]");
-  replace(/\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, "$1[REDACTED]");
-  replace(/\b(api[_-]?key|token|secret|password|passwd|client[_-]?secret)(\s*[:=]\s*)["']?[^\s"']+/gi, "$1$2[REDACTED]");
-  replace(/\b(ghp_|github_pat_|sk-|xox[baprs]-)[A-Za-z0-9_-]{12,}\b/g, "$1[REDACTED]");
+  replace(/\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, (match, prefix) => `${prefix}[REDACTED]`);
+  replace(/\b(api[_-]?key|token|secret|password|passwd|client[_-]?secret)(\s*[:=]\s*)["']?[^\s"']+/gi, (match, key, separator) => `${key}${separator}[REDACTED]`);
+  replace(/\b(ghp_|github_pat_|sk-|xox[baprs]-)[A-Za-z0-9_-]{12,}\b/g, (match, prefix) => `${prefix}[REDACTED]`);
   replace(/:\/\/[^\s/@:]+:[^\s/@]+@/g, "://[REDACTED]@");
   return { text: input, redactions };
 }
@@ -102,9 +103,9 @@ async function captureAgent(target = "") {
 
   const capturedAt = new Date().toISOString();
   const stamp = capturedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-  const fileName = `${stamp}-${pane.replace(":", "-")}.md`;
+  const fileName = `${stamp}-${pane.replace(":", "-")}-${randomUUID()}.md`;
   const targetPath = path.join(exportDir, fileName);
-  const tmpPath = `${targetPath}.${process.pid}.tmp`;
+  const tmpPath = `${targetPath}.${randomUUID()}.tmp`;
   const bounded = boundedTail(res.stdout);
   const redacted = redactCapture(bounded);
   const body = [
