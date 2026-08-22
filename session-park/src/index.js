@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const SOURCE = "session-park";
@@ -64,6 +64,13 @@ function fragment(parked) {
   };
 }
 
+// Ids become filenames under parked/ — restrict to a safe charset so a
+// crafted id can never escape the directory.
+function sanitizeId(id) {
+  const cleaned = String(id).replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[-.]+/, "");
+  return cleaned.slice(0, 80);
+}
+
 async function writeParkRecord(id, extra = {}) {
   const dir = parkedDir();
   await mkdir(dir, { recursive: true });
@@ -75,7 +82,10 @@ async function writeParkRecord(id, extra = {}) {
     ...extra,
   };
   const target = path.join(dir, `${id}.json`);
-  await writeFile(target, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  // Atomic write so list-parked never observes a partial record.
+  const tmp = path.join(dir, `${id}.json.${process.pid}.tmp`);
+  await writeFile(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  await rename(tmp, target);
   return record;
 }
 
@@ -93,27 +103,28 @@ async function main() {
   switch (action) {
     case "park": {
       const id =
-        idArg ||
-        process.env.HERDR_PANE_ID ||
+        sanitizeId(idArg) ||
+        sanitizeId(process.env.HERDR_PANE_ID || "") ||
         `pane-${Date.now()}`;
       await writeParkRecord(id, { scope: "pane" });
       break;
     }
     case "park-workspace": {
       const id =
-        idArg ||
-        process.env.HERDR_WORKSPACE_ID ||
+        sanitizeId(idArg) ||
+        sanitizeId(process.env.HERDR_WORKSPACE_ID || "") ||
         `workspace-${Date.now()}`;
       await writeParkRecord(id, { scope: "workspace" });
       break;
     }
     case "resume": {
-      if (!idArg) {
+      const id = sanitizeId(idArg);
+      if (!id) {
         console.error("resume requires a parked record id");
         process.exitCode = 1;
         return;
       }
-      const file = path.join(parkedDir(), `${idArg}.json`);
+      const file = path.join(parkedDir(), `${id}.json`);
       try {
         await unlink(file);
       } catch (err) {
@@ -128,7 +139,9 @@ async function main() {
       for (const record of records) {
         const ts = Date.parse(record.parked_at || "");
         if (!Number.isFinite(ts) || ts > cutoff) continue;
-        await unlink(path.join(parkedDir(), `${record.id}.json`)).catch(() => {});
+        const id = sanitizeId(record.id || "");
+        if (!id) continue;
+        await unlink(path.join(parkedDir(), `${id}.json`)).catch(() => {});
       }
       break;
     }

@@ -1,6 +1,6 @@
 id = "com.chefgroep.udo-metrics"
 name = "UDO Metrics"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.5"
 description = "Pull metrics from Utrecht Data OS Grafana/Netdata into Fleet Ops Bar"
 platforms = ["linux"]

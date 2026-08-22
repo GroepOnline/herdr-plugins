@@ -1,0 +1,38 @@
+name: Plugin PR gate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests vs package.json vs registry
+        run: python3 scripts/validate.py
+      - name: Syntax-check JS plugin sources
+        run: |
+          fail=0
+          for f in */src/index.js; do
+            node --check "$f" || fail=1
+          done
+          exit $fail
+  typescript:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [chef-github-status, chef-linear-context, kater-bridge, chef-pane-reaper]
+    defaults:
+      run:
+        working-directory: ${{ matrix.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dev dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npx tsc --noEmit
