@@ -112,10 +112,15 @@ async function main() {
   switch (action) {
     case "scan-fleet":
     case "on-workspace-focused": {
-      const scan =
-        action === "scan-fleet"
-          ? await scanFleet()
-          : { degraded: true, reason: "heartbeat (run scan-fleet for a probe)", results: [] };
+      // Workspace focus is a heartbeat event, not a probe.  Do not write a
+      // degraded empty fragment here: that would clobber a fresh live result
+      // written by scan-fleet or scan-node.
+      if (action === "on-workspace-focused") {
+        console.log(JSON.stringify({ ok: true, action, heartbeat: true }));
+        return;
+      }
+
+      const scan = await scanFleet();
       const online = scan.results.filter((r) => r.online).length;
       const total = scan.results.length;
       const summary = scan.degraded

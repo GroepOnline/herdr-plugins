@@ -108,10 +108,15 @@ async function main() {
   switch (action) {
     case "check-tunnels":
     case "on-workspace-focused": {
-      const results =
-        action === "check-tunnels"
-          ? await Promise.all(configuredHosts().map(probeHost))
-          : [];
+      // Workspace focus is a heartbeat event, not a probe.  Do not write an
+      // empty `tunnels: idle` fragment here: that would clobber a fresh live
+      // result written by check-tunnels or check-dns.
+      if (action === "on-workspace-focused") {
+        console.log(JSON.stringify({ ok: true, action, heartbeat: true }));
+        return;
+      }
+
+      const results = await Promise.all(configuredHosts().map(probeHost));
       const healthy = results.filter((r) => r.ok).length;
       const total = results.length;
       const summary = total === 0 ? "tunnels: idle" : `tunnels: ${healthy}/${total} healthy`;

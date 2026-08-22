@@ -11,9 +11,9 @@ Cloudflare tunnel + DNS health voor de Herdr Fleet Ops Bar.
 | `check-tunnels` | HTTPS-probe (GET, 5s timeout) tegen elke geconfigureerde host | per-host `ok`, HTTP `status`, `latency_ms`; heartbeat-summary `tunnels: n/m healthy` |
 | `check-dns [host]` | Resolveert alle geconfigureerde hosts (of één opgegeven host) via de systeem-resolver | per-host `resolved` + adressen; summary `dns: n/m resolved` |
 | `dig-probe <host>` | Zelfde resolver-probe voor één host (alias van `check-dns <host>`) | idem |
-| `on-workspace-focused` | Heartbeat-only, probeert niets | laatste heartbeat |
+| `on-workspace-focused` | Heartbeat-only, probeert niets en schrijft geen state | heartbeat-event |
 
-Elke action schrijft een atomair `fleet_ops.json`-fragment (`source`, `updated_at`, `ttl_seconds: 300`, `cloudflare.tunnels_healthy`, `cloudflare.summary`) dat de Fleet Ops Bar leest.
+De probe-actions schrijven een atomair `fleet_ops.json`-fragment (`source`, `updated_at`, `ttl_seconds: 300`, `cloudflare.tunnels_healthy`, `cloudflare.summary`) dat de Fleet Ops Bar leest. Het focus-heartbeat schrijft bewust niets, zodat het geen verse probe-resultaten kan overschrijven.
 
 ## Config
 
