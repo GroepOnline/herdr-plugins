@@ -62,6 +62,79 @@
         "ops"
       ],
       "min_herdr_version": "0.7.3"
+    },
+    {
+      "id": "com.chefgroep.cloudflare-tunnel",
+      "name": "Cloudflare Tunnel Status",
+      "version": "0.1.0",
+      "description": "Cloudflare tunnel + DNS health for Fleet Ops Bar (SSOT: Cloudflare API)",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/cloudflare-tunnel",
+      "categories": [
+        "productivity",
+        "cloudflare",
+        "fleet"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
+      "id": "com.chefgroep.fleet-health",
+      "name": "Fleet Health",
+      "version": "0.1.0",
+      "description": "Tailscale node health + SSH probes for Fleet Ops Bar (SSOT: host/Tailscale)",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/fleet-health",
+      "categories": [
+        "observability",
+        "fleet"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
+      "id": "com.chefgroep.issue-provision",
+      "name": "Issue Provision",
+      "version": "0.1.0",
+      "description": "Create and tear down workspaces from Linear issues (SSOT: Linear + Git)",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/issue-provision",
+      "categories": [
+        "productivity",
+        "linear"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
+      "id": "com.chefgroep.ops",
+      "name": "Herdr Ops",
+      "version": "0.1.0",
+      "description": "Runtime location bridge for Fleet Ops (scaffold \u2192 GroepOnline/herdr-ops)",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/ops",
+      "categories": [
+        "ops",
+        "herdr"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
+      "id": "com.chefgroep.session-park",
+      "name": "Session Parking",
+      "version": "0.1.0",
+      "description": "Snapshot and resume agent sessions (SSOT: Herdr session snapshots)",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/session-park",
+      "categories": [
+        "productivity",
+        "sessions"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
+      "id": "com.chefgroep.udo-metrics",
+      "name": "UDO Metrics",
+      "version": "0.1.0",
+      "description": "Pull metrics from Utrecht Data OS Grafana/Netdata into Fleet Ops Bar",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/udo-metrics",
+      "categories": [
+        "observability",
+        "utrecht"
+      ],
+      "min_herdr_version": "0.7.5"
     }
   ]
 }
