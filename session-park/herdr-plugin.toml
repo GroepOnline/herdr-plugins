@@ -1,6 +1,6 @@
 id = "com.chefgroep.session-park"
 name = "Session Parking"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.7.5"
 description = "Snapshot and resume agent sessions (SSOT: Herdr session snapshots)"
 platforms = ["linux", "macos", "windows"]

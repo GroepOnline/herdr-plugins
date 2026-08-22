@@ -66,8 +66,8 @@
     {
       "id": "com.chefgroep.cloudflare-tunnel",
       "name": "Cloudflare Tunnel Status",
-      "version": "0.1.0",
-      "description": "Cloudflare tunnel + DNS health for Fleet Ops Bar (SSOT: Cloudflare API)",
+      "version": "0.2.0",
+      "description": "Live tunnel + DNS health probes for the Fleet Ops Bar",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/cloudflare-tunnel",
       "categories": [
         "productivity",
@@ -79,8 +79,8 @@
     {
       "id": "com.chefgroep.fleet-health",
       "name": "Fleet Health",
-      "version": "0.1.0",
-      "description": "Tailscale node health + SSH probes for Fleet Ops Bar (SSOT: host/Tailscale)",
+      "version": "0.2.0",
+      "description": "Tailscale fleet scan + SSH node probes for the Fleet Ops Bar",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/fleet-health",
       "categories": [
         "observability",
@@ -91,8 +91,8 @@
     {
       "id": "com.chefgroep.issue-provision",
       "name": "Issue Provision",
-      "version": "0.1.0",
-      "description": "Create and tear down workspaces from Linear issues (SSOT: Linear + Git)",
+      "version": "0.2.0",
+      "description": "Track workspaces provisioned from Linear issues (ledger + heartbeat)",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/issue-provision",
       "categories": [
         "productivity",
@@ -115,7 +115,7 @@
     {
       "id": "com.chefgroep.session-park",
       "name": "Session Parking",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Snapshot and resume agent sessions (SSOT: Herdr session snapshots)",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/session-park",
       "categories": [
@@ -127,8 +127,8 @@
     {
       "id": "com.chefgroep.udo-metrics",
       "name": "UDO Metrics",
-      "version": "0.1.0",
-      "description": "Pull metrics from Utrecht Data OS Grafana/Netdata into Fleet Ops Bar",
+      "version": "0.2.0",
+      "description": "Live load/uptime from UDO nodes via SSH for the Fleet Ops Bar",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/udo-metrics",
       "categories": [
         "observability",

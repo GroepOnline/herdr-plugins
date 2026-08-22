@@ -1,6 +1,6 @@
 id = "com.chefgroep.issue-provision"
 name = "Issue Provision"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.5"
 description = "Create and tear down workspaces from Linear issues (SSOT: Linear + Git)"
 platforms = ["linux", "macos", "windows"]
