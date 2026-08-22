@@ -58,7 +58,7 @@ function redactCapture(input) {
   // Authorization: Bearer|Basic <token>
   replace(/\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, (match, prefix) => `${prefix}[REDACTED]`);
   // Standalone Bearer <token> (incl. JWT) — skip already-redacted
-  replace(/\b(Bearer\s+)(?!\[REDACTED\])[^\s]+/g, (match, prefix) => `${prefix}[REDACTED]`);
+  replace(/\b(Bearer\s+)(?!\[REDACTED\])[^\s]+/gi, (match, prefix) => `${prefix}[REDACTED]`);
   // Compact JWTs not already caught by Bearer
   replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED JWT]");
   // JSON "api_key": "..." / "apiKey": "..." and related secret fields
