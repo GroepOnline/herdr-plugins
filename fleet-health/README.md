@@ -10,9 +10,9 @@ Tailscale fleet-health + per-node SSH-probes voor de Herdr Fleet Ops Bar.
 |---|---|---|
 | `scan-fleet` | Parseert `tailscale status --json` (5s timeout) en telt online peers | `fleet.online`, `fleet.total`, summary `fleet: n/m online`, per-peer lijst |
 | `scan-node <node>` | SSH-probe (`BatchMode=yes`, `ConnectTimeout=5`) naar één host | `reachable`, `latency_ms` |
-| `on-workspace-focused` | Heartbeat-only | laatste heartbeat |
+| `on-workspace-focused` | Heartbeat-only, probeert niets en schrijft geen state | heartbeat-event |
 
-Heartbeat schrijft atomair `fleet_ops.json` (`ttl_seconds: 120`). Is `tailscale` niet geïnstalleerd of geeft invalid JSON, dan degradeert de plugin expliciet (`online: null`, reden in de summary) in plaats van te gokken.
+De probe-actions schrijven atomair `fleet_ops.json` (`ttl_seconds: 120`). Het focus-heartbeat schrijft bewust niets, zodat het geen verse probe-resultaten kan overschrijven. Is `tailscale` niet geïnstalleerd of geeft invalid JSON, dan degradeert de plugin expliciet (`online: null`, reden in de summary) in plaats van te gokken.
 
 ## Config
 
