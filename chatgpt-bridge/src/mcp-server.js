@@ -70,6 +70,10 @@ function safePaneId(value) {
   return pane;
 }
 
+function actionPaneTarget(env = process.env) {
+  return env.HERDR_PANE_ID ? safePaneId(env.HERDR_PANE_ID) : "";
+}
+
 function boundedTail(value) {
   const raw = Buffer.from(String(value || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), "utf8");
   if (raw.length <= CAPTURE_MAX_BYTES) return raw.toString("utf8");
@@ -150,6 +154,9 @@ function selftest() {
     throw new Error("capture byte-cap selftest failed");
   }
   safePaneId("w3Q:p1");
+  if (actionPaneTarget({ HERDR_PANE_ID: "w3Q:p2" }) !== "w3Q:p2" || actionPaneTarget({}) !== "") {
+    throw new Error("capture action pane-context selftest failed");
+  }
   try {
     safePaneId("../../bad");
     throw new Error("pane validation selftest failed");
@@ -472,7 +479,11 @@ async function main() {
       await doctor();
       break;
     case "capture-focused":
-      console.log(JSON.stringify({ ok: true, action: "capture-focused", ...(await captureAgent()) }));
+      console.log(JSON.stringify({
+        ok: true,
+        action: "capture-focused",
+        ...(await captureAgent(actionPaneTarget())),
+      }));
       break;
     case "selftest":
       console.log(JSON.stringify(selftest()));
