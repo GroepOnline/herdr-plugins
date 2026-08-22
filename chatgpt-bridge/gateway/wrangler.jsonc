@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herdr-chatgpt-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "PLACEHOLDER_CREATE_BEFORE_DEPLOY"
+    }
+  ],
+  "vars": {
+    "GATEWAY_URL": "https://herdr-mcp.chefgroep.online",
+    "ORIGIN_URL": "https://herdr-mcp-origin.chefgroep.online"
+  }
+}

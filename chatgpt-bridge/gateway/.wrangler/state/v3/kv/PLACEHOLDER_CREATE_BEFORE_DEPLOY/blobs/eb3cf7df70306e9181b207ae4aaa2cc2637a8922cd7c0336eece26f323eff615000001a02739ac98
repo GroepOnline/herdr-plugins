@@ -1,0 +1,1 @@
+{"clientId":"gapArtlf3oB0s0F7","redirectUris":["https://chatgpt.com/connector_mcp/oauth/callback"],"clientName":"T3","grantTypes":["authorization_code"],"responseTypes":["code"],"registrationDate":1787364486,"tokenEndpointAuthMethod":"none","authMethodExplicit":true}
