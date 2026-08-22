@@ -72,9 +72,11 @@ function safePaneId(value) {
 
 function boundedTail(value) {
   const raw = Buffer.from(String(value || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), "utf8");
-  return raw.length <= CAPTURE_MAX_BYTES
-    ? raw.toString("utf8")
-    : raw.subarray(raw.length - CAPTURE_MAX_BYTES).toString("utf8");
+  if (raw.length <= CAPTURE_MAX_BYTES) return raw.toString("utf8");
+
+  let start = raw.length - CAPTURE_MAX_BYTES;
+  while (start < raw.length && (raw[start] & 0xc0) === 0x80) start += 1;
+  return raw.subarray(start).toString("utf8");
 }
 
 async function focusedPaneId() {
@@ -142,6 +144,10 @@ function selftest() {
   const result = redactCapture(sample);
   if (result.redactions !== 4 || /super-secret-value|abcdefghijklmnop|password@example/.test(result.text)) {
     throw new Error("capture redaction selftest failed");
+  }
+  const bounded = boundedTail(`a😀${"b".repeat(CAPTURE_MAX_BYTES - 2)}`);
+  if (bounded.startsWith("�") || Buffer.byteLength(bounded) > CAPTURE_MAX_BYTES) {
+    throw new Error("capture byte-cap selftest failed");
   }
   safePaneId("w3Q:p1");
   try {
