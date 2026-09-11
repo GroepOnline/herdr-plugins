@@ -32,7 +32,8 @@ async function main() {
       { error: `Kater gateway unreachable at ${katerApiUrl()}` },
       30,
     );
-    console.log("kater-bridge: gateway unreachable");
+    console.error("kater-bridge: gateway unreachable");
+    process.exitCode = 1;
     return;
   }
 

@@ -26,7 +26,8 @@ async function main() {
 
   if (!listRes.data && listRes.status === 0) {
     writeFragment(PLUGIN_ID, "kater-pr", { error: "Kater /api/pr/list unreachable" }, 30);
-    console.log("kater-bridge: pr-gate list unreachable");
+    console.error("kater-bridge: pr-gate list unreachable");
+    process.exitCode = 1;
     return;
   }
 
@@ -34,7 +35,8 @@ async function main() {
   if (!listRes.ok || list?.error) {
     const err = list?.error || `Kater /api/pr/list HTTP ${listRes.status}`;
     writeFragment(PLUGIN_ID, "kater-pr", { error: err, branch, http_status: listRes.status }, 30);
-    console.log("kater-bridge: pr-gate list error", err);
+    console.error("kater-bridge: pr-gate list error", err);
+    process.exitCode = 1;
     return;
   }
 
@@ -76,7 +78,8 @@ async function main() {
       30,
       `PR #${pr.number} gate ERROR`,
     );
-    console.log(`kater-bridge: PR #${pr.number} gate error`, err);
+    console.error(`kater-bridge: PR #${pr.number} gate error`, err);
+    process.exitCode = 1;
     return;
   }
 

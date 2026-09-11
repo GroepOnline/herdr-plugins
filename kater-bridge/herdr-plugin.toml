@@ -1,6 +1,6 @@
 id = "com.chefgroep.kater-bridge"
 name = "Kater MCP Bridge"
-version = "0.2.0"
+version = "0.2.1"
 min_herdr_version = "0.7.3"
 description = "Bridge to Kater MCP Gateway — REST health/doctor/PR-gate plus Utrecht MCP tools via SSE"
 platforms = ["linux"]

@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { execFileSync } from "child_process";
 
 export const STATE_DIR = process.env.HERDR_PLUGIN_STATE_DIR || "/tmp/herdr-plugin-state";
 export const CONFIG_DIR = process.env.HERDR_PLUGIN_CONFIG_DIR || "";
@@ -18,11 +19,49 @@ export function loadDotEnv() {
   }
 }
 
+export function pluginContext(): Record<string, unknown> {
+  try { return JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}"); }
+  catch { return {}; }
+}
+
+export function contextCwd(): string {
+  const ctx = pluginContext();
+  for (const candidate of [ctx.focused_pane_cwd, ctx.workspace_cwd, process.cwd()]) {
+    if (typeof candidate === "string" && candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return process.cwd();
+}
+
+export function git(args: string[]): string {
+  try {
+    return execFileSync("git", args, {
+      cwd: contextCwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch { return ""; }
+}
+
+export function githubRepoFromRemote(remote: string): { owner: string; repo: string } | null {
+  const value = (remote || "").trim().replace(/\.git$/, "");
+  if (!value) return null;
+  const scp = value.match(/^[^@\s]+@[^:\s]+:([^/\s]+)\/([^/\s]+)$/);
+  if (scp) return { owner: scp[1], repo: scp[2] };
+  try {
+    const u = new URL(value);
+    const parts = u.pathname.replace(/^\/+|\/+$/g, "").split("/");
+    if (parts.length >= 2) return { owner: parts[parts.length - 2], repo: parts[parts.length - 1] };
+  } catch { /* not a URL */ }
+  const fallback = value.match(/[:/]([^/:]+)\/([^/]+)$/);
+  return fallback ? { owner: fallback[1], repo: fallback[2] } : null;
+}
+
 export function writeFragment(pluginId, component, data, ttlSeconds = 60, display = "") {
-  fs.mkdirSync(STATE_DIR, { recursive: true });
+  fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   const fragment: any = { plugin_id: pluginId, component, data, fetched_at: Date.now(), ttl_seconds: ttlSeconds };
   if (display) fragment.display = display;
-  fs.writeFileSync(path.join(STATE_DIR, "fleet_ops.json"), JSON.stringify(fragment));
+  const target = path.join(STATE_DIR, "fleet_ops.json");
+  const tmp = path.join(STATE_DIR, `fleet_ops.json.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(fragment), { mode: 0o600 });
+  fs.renameSync(tmp, target);
   return fragment;
 }
 

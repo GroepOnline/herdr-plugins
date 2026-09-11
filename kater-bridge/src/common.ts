@@ -58,26 +58,48 @@ export function writeFragment(pluginId: string, component: string, data: unknown
   };
   if (display) fragment.display = display;
 
+  const suffix = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
   const componentPath = path.join(stateDir, `${component}.json`);
-  const componentTmp = componentPath + ".tmp";
+  const componentTmp = `${componentPath}.${suffix}.tmp`;
   fs.writeFileSync(componentTmp, JSON.stringify(fragment), { mode: 0o600 });
   fs.renameSync(componentTmp, componentPath);
 
   const fleetOpsPath = path.join(stateDir, "fleet_ops.json");
-  let merged: { components: Record<string, unknown>; updated_at?: number } = { components: {} };
-  try {
-    if (fs.existsSync(fleetOpsPath)) {
-      const existing = JSON.parse(fs.readFileSync(fleetOpsPath, "utf8"));
-      if (existing?.components && typeof existing.components === "object") merged = existing;
+  const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const deadline = Date.now() + 3000;
+  while (true) {
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      break;
+    } catch (err: any) {
+      if (err?.code !== "EEXIST") throw err;
+      try {
+        const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (age > 10000) fs.rmSync(lockPath, { recursive: true, force: true });
+      } catch { /* retry */ }
+      if (Date.now() >= deadline) throw new Error("timed out waiting for fleet_ops state lock");
+      sleep(20);
     }
-  } catch {
-    /* start fresh */
   }
-  merged.components[component] = fragment;
-  merged.updated_at = Date.now();
-  const fleetTmp = fleetOpsPath + ".tmp";
-  fs.writeFileSync(fleetTmp, JSON.stringify(merged), { mode: 0o600 });
-  fs.renameSync(fleetTmp, fleetOpsPath);
+  try {
+    let merged: { components: Record<string, unknown>; updated_at?: number } = { components: {} };
+    try {
+      if (fs.existsSync(fleetOpsPath)) {
+        const existing = JSON.parse(fs.readFileSync(fleetOpsPath, "utf8"));
+        if (existing?.components && typeof existing.components === "object") merged = existing;
+      }
+    } catch {
+      /* start fresh */
+    }
+    merged.components[component] = fragment;
+    merged.updated_at = Date.now();
+    const fleetTmp = `${fleetOpsPath}.${suffix}.tmp`;
+    fs.writeFileSync(fleetTmp, JSON.stringify(merged), { mode: 0o600 });
+    fs.renameSync(fleetTmp, fleetOpsPath);
+  } finally {
+    fs.rmSync(lockPath, { recursive: true, force: true });
+  }
   return fragment;
 }
 
@@ -113,9 +135,18 @@ export function cacheSet(key: string, value: unknown, ttlSeconds = 60) {
   }
 }
 
+export function pluginContextCwd(): string {
+  let ctx: Record<string, unknown> = {};
+  try { ctx = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}"); } catch { /* ignore */ }
+  for (const candidate of [ctx.focused_pane_cwd, ctx.workspace_cwd, process.cwd()]) {
+    if (typeof candidate === "string" && candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return process.cwd();
+}
+
 export function git(cmd: string) {
   try {
-    return execSync(`git ${cmd}`, { encoding: "utf8" }).trim();
+    return execSync(`git ${cmd}`, { cwd: pluginContextCwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return "";
   }

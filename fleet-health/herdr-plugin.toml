@@ -1,6 +1,6 @@
 id = "com.chefgroep.fleet-health"
 name = "Fleet Health"
-version = "0.2.0"
+version = "0.2.1"
 min_herdr_version = "0.7.5"
 description = "Tailscale node health + SSH probes for Fleet Ops Bar (SSOT: host/Tailscale)"
 platforms = ["linux"]
