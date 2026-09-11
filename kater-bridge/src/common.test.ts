@@ -27,3 +27,47 @@ test("reclaims a dead lock before writing the merged fragment", () => {
   assert.equal(state.components.kater.plugin_id, "test");
   assert.equal(fs.existsSync(lockPath), false);
 });
+
+test("reclaims an ownerless stale initialization lock", () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "kater-bridge-test-"));
+  stateDirs.push(stateDir);
+  process.env.HERDR_PLUGIN_STATE_DIR = stateDir;
+
+  const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  fs.mkdirSync(lockPath);
+  const old = new Date(Date.now() - 11000);
+  fs.utimesSync(lockPath, old, old);
+
+  const { writeFragment } = require("./common.js");
+  writeFragment("test", "ownerless", { ok: true });
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("reclaims a malformed stale initialization lock", () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "kater-bridge-test-"));
+  stateDirs.push(stateDir);
+  process.env.HERDR_PLUGIN_STATE_DIR = stateDir;
+
+  const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  fs.mkdirSync(lockPath);
+  fs.writeFileSync(path.join(lockPath, "owner.json"), "{}");
+  const old = new Date(Date.now() - 11000);
+  fs.utimesSync(lockPath, old, old);
+
+  const { writeFragment } = require("./common.js");
+  writeFragment("test", "malformed", { ok: true });
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("does not reclaim a fresh ownerless initialization lock", () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "kater-bridge-test-"));
+  stateDirs.push(stateDir);
+  process.env.HERDR_PLUGIN_STATE_DIR = stateDir;
+
+  const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  fs.mkdirSync(lockPath);
+
+  const { writeFragment } = require("./common.js");
+  assert.throws(() => writeFragment("test", "fresh", { ok: true }), /timed out waiting/);
+  assert.equal(fs.existsSync(lockPath), true);
+});

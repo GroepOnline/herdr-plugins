@@ -4,6 +4,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 
 const FETCH_TIMEOUT_MS = 15000;
+const STALE_INITIALIZING_LOCK_MS = 10000;
 
 function resolveStateDir(): string {
   if (process.env.HERDR_PLUGIN_STATE_DIR) return process.env.HERDR_PLUGIN_STATE_DIR;
@@ -46,6 +47,47 @@ function ensurePrivateDir(dir: string) {
   }
 }
 
+function readLockOwner(lockPath: string): { pid?: unknown; token?: unknown } | null {
+  try {
+    const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+    return owner && typeof owner === "object" ? owner : null;
+  } catch {
+    return null;
+  }
+}
+
+function ownerIsDead(owner: { pid?: unknown }): boolean {
+  if (typeof owner.pid !== "number") return false;
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (err: any) {
+    return err?.code === "ESRCH";
+  }
+}
+
+function reclaimStaleLock(lockPath: string, suffix: string) {
+  const owner = readLockOwner(lockPath);
+  const hasOwner = typeof owner?.pid === "number";
+  let stale = hasOwner ? ownerIsDead(owner) : false;
+  if (!hasOwner) {
+    try { stale = Date.now() - fs.statSync(lockPath).mtimeMs > STALE_INITIALIZING_LOCK_MS; } catch { return; }
+  }
+  if (!stale) return;
+
+  const quarantinePath = `${lockPath}.${suffix}.reclaim`;
+  try {
+    fs.renameSync(lockPath, quarantinePath);
+    const quarantinedOwner = readLockOwner(quarantinePath);
+    const sameDeadOwner = hasOwner && quarantinedOwner?.pid === owner?.pid && quarantinedOwner?.token === owner?.token;
+    const staleUninitializedLock = !hasOwner && typeof quarantinedOwner?.pid !== "number"
+      && Date.now() - fs.statSync(quarantinePath).mtimeMs > STALE_INITIALIZING_LOCK_MS;
+    if (sameDeadOwner || staleUninitializedLock) fs.rmSync(quarantinePath, { recursive: true, force: true });
+  } catch {
+    /* another writer changed the lock; retry */
+  }
+}
+
 export function writeFragment(pluginId: string, component: string, data: unknown, ttlSeconds = 60, display = "") {
   const stateDir = getStateDir();
   ensurePrivateDir(stateDir);
@@ -76,24 +118,7 @@ export function writeFragment(pluginId: string, component: string, data: unknown
       break;
     } catch (err: any) {
       if (err?.code !== "EEXIST") throw err;
-      try {
-        const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
-        if (typeof owner?.pid === "number") {
-          try { process.kill(owner.pid, 0); }
-          catch (ownerErr: any) {
-            if (ownerErr?.code === "ESRCH") {
-              const quarantinePath = `${lockPath}.${suffix}.reclaim`;
-              try {
-                fs.renameSync(lockPath, quarantinePath);
-                const quarantinedOwner = JSON.parse(fs.readFileSync(path.join(quarantinePath, "owner.json"), "utf8"));
-                if (quarantinedOwner?.pid === owner.pid && quarantinedOwner?.token === owner.token) {
-                  fs.rmSync(quarantinePath, { recursive: true, force: true });
-                }
-              } catch { /* another writer changed the lock; retry */ }
-            }
-          }
-        }
-      } catch { /* retry */ }
+      reclaimStaleLock(lockPath, suffix);
       if (Date.now() >= deadline) throw new Error("timed out waiting for fleet_ops state lock");
       sleep(20);
     }
