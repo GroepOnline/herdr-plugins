@@ -66,12 +66,13 @@ export function writeFragment(pluginId: string, component: string, data: unknown
 
   const fleetOpsPath = path.join(stateDir, "fleet_ops.json");
   const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  const lockOwner = { pid: process.pid, token: suffix };
   const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   const deadline = Date.now() + 3000;
   while (true) {
     try {
       fs.mkdirSync(lockPath, { mode: 0o700 });
-      fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+      fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify(lockOwner), { mode: 0o600 });
       break;
     } catch (err: any) {
       if (err?.code !== "EEXIST") throw err;
@@ -80,7 +81,16 @@ export function writeFragment(pluginId: string, component: string, data: unknown
         if (typeof owner?.pid === "number") {
           try { process.kill(owner.pid, 0); }
           catch (ownerErr: any) {
-            if (ownerErr?.code === "ESRCH") fs.rmSync(lockPath, { recursive: true, force: true });
+            if (ownerErr?.code === "ESRCH") {
+              const quarantinePath = `${lockPath}.${suffix}.reclaim`;
+              try {
+                fs.renameSync(lockPath, quarantinePath);
+                const quarantinedOwner = JSON.parse(fs.readFileSync(path.join(quarantinePath, "owner.json"), "utf8"));
+                if (quarantinedOwner?.pid === owner.pid && quarantinedOwner?.token === owner.token) {
+                  fs.rmSync(quarantinePath, { recursive: true, force: true });
+                }
+              } catch { /* another writer changed the lock; retry */ }
+            }
           }
         }
       } catch { /* retry */ }
@@ -104,7 +114,14 @@ export function writeFragment(pluginId: string, component: string, data: unknown
     fs.writeFileSync(fleetTmp, JSON.stringify(merged), { mode: 0o600 });
     fs.renameSync(fleetTmp, fleetOpsPath);
   } finally {
-    fs.rmSync(lockPath, { recursive: true, force: true });
+    try {
+      const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+      if (owner?.pid === lockOwner.pid && owner?.token === lockOwner.token) {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+      }
+    } catch {
+      /* a recovered or replacement lock is not ours to remove */
+    }
   }
   return fragment;
 }
