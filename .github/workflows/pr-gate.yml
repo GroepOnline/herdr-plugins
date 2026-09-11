@@ -39,3 +39,6 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Test Kater Bridge lock recovery
+        if: matrix.plugin == 'kater-bridge'
+        run: npm test

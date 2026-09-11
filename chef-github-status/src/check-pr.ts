@@ -1,32 +1,31 @@
 #!/usr/bin/env node
-import { loadDotEnv, writeFragment, getToken, cacheGet, cacheSet } from "./common";
-import { execSync } from "child_process";
+import { loadDotEnv, writeFragment, getToken, cacheGet, cacheSet, git, githubRepoFromRemote, contextCwd } from "./common";
 
 loadDotEnv();
 const TOKEN = getToken("GITHUB_TOKEN", "GH_TOKEN");
 const PLUGIN_ID = "com.chefgroep.github-status";
 const HEADERS = TOKEN ? { Authorization: `Bearer ${TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } : {};
 
-function git(cmd) { try { return execSync(`git ${cmd}`, { encoding: "utf8" }).trim(); } catch { return ""; } }
 
 const CI_ICON = { success: "OK", failure: "FAIL", running: "RUN", pending: "PEND", none: "-" };
 
 async function main() {
   if (!TOKEN) {
     writeFragment(PLUGIN_ID, "github", { error: "GITHUB_TOKEN not configured - add it to the plugin config .env" }, 120);
-    console.log("github-status: no GITHUB_TOKEN configured");
+    console.error("github-status: no GITHUB_TOKEN configured");
+    process.exitCode = 1;
     return;
   }
-  const remote = git("remote get-url origin").replace(/.*github\.com[:/]/, "").replace(/\.git$/, "");
-  const [owner, repo] = (remote || "").split("/");
-  const branch = git("branch --show-current");
-  if (!owner || !repo) { console.log("github-status: not a GitHub repo"); return; }
+  const parsed = githubRepoFromRemote(git(["remote", "get-url", "origin"]));
+  const branch = git(["branch", "--show-current"]);
+  if (!parsed) { console.log(`github-status: not a GitHub repo (${contextCwd()})`); return; }
+  const { owner, repo } = parsed;
 
   const cacheKey = `pr:${owner}:${repo}:${branch}`;
   let prs = cacheGet(cacheKey);
   if (!prs) {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open`, { headers: HEADERS });
-    if (!res.ok) { writeFragment(PLUGIN_ID, "github", { error: `GitHub API ${res.status} ${res.statusText}` }, 30); console.log("github-status: API error", res.status); return; }
+    if (!res.ok) { writeFragment(PLUGIN_ID, "github", { repo: `${owner}/${repo}`, branch, cwd: contextCwd(), error: `GitHub API ${res.status} ${res.statusText}`, auth_hint: res.status === 404 ? "token may not have access to this repository" : null }, 30); console.error("github-status: API error", res.status, `${owner}/${repo}`); process.exitCode = 1; return; }
     prs = await res.json();
     cacheSet(cacheKey, prs, 30);
   }
@@ -34,6 +33,12 @@ async function main() {
   if (!pr) { console.log(`github-status: no open PR for ${branch}`); writeFragment(PLUGIN_ID, "github", { repo: `${owner}/${repo}`, branch, pr: null }, 120); return; }
 
   const checksRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${pr.head.sha}/check-runs`, { headers: HEADERS });
+  if (!checksRes.ok) {
+    writeFragment(PLUGIN_ID, "github", { repo: `${owner}/${repo}`, branch, pr_number: pr.number, cwd: contextCwd(), error: `GitHub checks API ${checksRes.status} ${checksRes.statusText}` }, 30);
+    console.error("github-status: checks API error", checksRes.status, `${owner}/${repo}`);
+    process.exitCode = 1;
+    return;
+  }
   const checks = (await checksRes.json()).check_runs || [];
   const ciStatus = checks.length === 0 ? "none"
     : checks.every(c => c.conclusion === "success") ? "success"

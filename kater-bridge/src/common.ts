@@ -4,6 +4,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 
 const FETCH_TIMEOUT_MS = 15000;
+const STALE_INITIALIZING_LOCK_MS = 10000;
 
 function resolveStateDir(): string {
   if (process.env.HERDR_PLUGIN_STATE_DIR) return process.env.HERDR_PLUGIN_STATE_DIR;
@@ -46,6 +47,47 @@ function ensurePrivateDir(dir: string) {
   }
 }
 
+function readLockOwner(lockPath: string): { pid?: unknown; token?: unknown } | null {
+  try {
+    const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+    return owner && typeof owner === "object" ? owner : null;
+  } catch {
+    return null;
+  }
+}
+
+function ownerIsDead(owner: { pid?: unknown }): boolean {
+  if (typeof owner.pid !== "number") return false;
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (err: any) {
+    return err?.code === "ESRCH";
+  }
+}
+
+function reclaimStaleLock(lockPath: string, suffix: string) {
+  const owner = readLockOwner(lockPath);
+  const hasOwner = typeof owner?.pid === "number";
+  let stale = hasOwner ? ownerIsDead(owner) : false;
+  if (!hasOwner) {
+    try { stale = Date.now() - fs.statSync(lockPath).mtimeMs > STALE_INITIALIZING_LOCK_MS; } catch { return; }
+  }
+  if (!stale) return;
+
+  const quarantinePath = `${lockPath}.${suffix}.reclaim`;
+  try {
+    fs.renameSync(lockPath, quarantinePath);
+    const quarantinedOwner = readLockOwner(quarantinePath);
+    const sameDeadOwner = hasOwner && quarantinedOwner?.pid === owner?.pid && quarantinedOwner?.token === owner?.token;
+    const staleUninitializedLock = !hasOwner && typeof quarantinedOwner?.pid !== "number"
+      && Date.now() - fs.statSync(quarantinePath).mtimeMs > STALE_INITIALIZING_LOCK_MS;
+    if (sameDeadOwner || staleUninitializedLock) fs.rmSync(quarantinePath, { recursive: true, force: true });
+  } catch {
+    /* another writer changed the lock; retry */
+  }
+}
+
 export function writeFragment(pluginId: string, component: string, data: unknown, ttlSeconds = 60, display = "") {
   const stateDir = getStateDir();
   ensurePrivateDir(stateDir);
@@ -58,26 +100,54 @@ export function writeFragment(pluginId: string, component: string, data: unknown
   };
   if (display) fragment.display = display;
 
+  const suffix = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
   const componentPath = path.join(stateDir, `${component}.json`);
-  const componentTmp = componentPath + ".tmp";
+  const componentTmp = `${componentPath}.${suffix}.tmp`;
   fs.writeFileSync(componentTmp, JSON.stringify(fragment), { mode: 0o600 });
   fs.renameSync(componentTmp, componentPath);
 
   const fleetOpsPath = path.join(stateDir, "fleet_ops.json");
-  let merged: { components: Record<string, unknown>; updated_at?: number } = { components: {} };
-  try {
-    if (fs.existsSync(fleetOpsPath)) {
-      const existing = JSON.parse(fs.readFileSync(fleetOpsPath, "utf8"));
-      if (existing?.components && typeof existing.components === "object") merged = existing;
+  const lockPath = path.join(stateDir, ".fleet_ops.lock");
+  const lockOwner = { pid: process.pid, token: suffix };
+  const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const deadline = Date.now() + 3000;
+  while (true) {
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify(lockOwner), { mode: 0o600 });
+      break;
+    } catch (err: any) {
+      if (err?.code !== "EEXIST") throw err;
+      reclaimStaleLock(lockPath, suffix);
+      if (Date.now() >= deadline) throw new Error("timed out waiting for fleet_ops state lock");
+      sleep(20);
     }
-  } catch {
-    /* start fresh */
   }
-  merged.components[component] = fragment;
-  merged.updated_at = Date.now();
-  const fleetTmp = fleetOpsPath + ".tmp";
-  fs.writeFileSync(fleetTmp, JSON.stringify(merged), { mode: 0o600 });
-  fs.renameSync(fleetTmp, fleetOpsPath);
+  try {
+    let merged: { components: Record<string, unknown>; updated_at?: number } = { components: {} };
+    try {
+      if (fs.existsSync(fleetOpsPath)) {
+        const existing = JSON.parse(fs.readFileSync(fleetOpsPath, "utf8"));
+        if (existing?.components && typeof existing.components === "object") merged = existing;
+      }
+    } catch {
+      /* start fresh */
+    }
+    merged.components[component] = fragment;
+    merged.updated_at = Date.now();
+    const fleetTmp = `${fleetOpsPath}.${suffix}.tmp`;
+    fs.writeFileSync(fleetTmp, JSON.stringify(merged), { mode: 0o600 });
+    fs.renameSync(fleetTmp, fleetOpsPath);
+  } finally {
+    try {
+      const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+      if (owner?.pid === lockOwner.pid && owner?.token === lockOwner.token) {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+      }
+    } catch {
+      /* a recovered or replacement lock is not ours to remove */
+    }
+  }
   return fragment;
 }
 
@@ -113,9 +183,21 @@ export function cacheSet(key: string, value: unknown, ttlSeconds = 60) {
   }
 }
 
+export function pluginContextCwd(): string {
+  let ctx: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ctx = parsed;
+  } catch { /* ignore */ }
+  for (const candidate of [ctx.focused_pane_cwd, ctx.workspace_cwd, process.cwd()]) {
+    if (typeof candidate === "string" && candidate && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) return candidate;
+  }
+  return process.cwd();
+}
+
 export function git(cmd: string) {
   try {
-    return execSync(`git ${cmd}`, { encoding: "utf8" }).trim();
+    return execSync(`git ${cmd}`, { cwd: pluginContextCwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return "";
   }

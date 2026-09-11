@@ -82,12 +82,21 @@ async function scanFleet() {
     return { degraded: true, reason: "tailscale status returned invalid JSON", results: [] };
   }
   const peers = Object.values(parsed.Peer || {});
-  const results = peers.map((p) => ({
-    node: p.HostName || p.DNSName || p.TailscaleIPs?.[0] || "unknown",
-    online: Boolean(p.Online),
-  }));
+  const byNode = new Map();
+  let duplicates = 0;
+  for (const p of peers) {
+    const dnsLabel = String(p.DNSName || "").replace(/\.$/, "").split(".")[0];
+    const node = dnsLabel || p.HostName || p.TailscaleIPs?.[0] || "unknown";
+    const previous = byNode.get(node);
+    if (previous) duplicates += 1;
+    byNode.set(node, {
+      node,
+      online: Boolean(p.Online) || Boolean(previous?.online),
+    });
+  }
+  const results = [...byNode.values()];
   results.sort((a, b) => a.node.localeCompare(b.node));
-  return { degraded: false, reason: null, results };
+  return { degraded: false, reason: null, results, duplicates };
 }
 
 async function scanNode(node) {
@@ -132,7 +141,7 @@ async function main() {
         summary,
       });
       const target = await writeFleetOps(data);
-      console.log(JSON.stringify({ ok: true, action, path: target, fleet: data.fleet, results: scan.results }));
+      console.log(JSON.stringify({ ok: true, action, path: target, fleet: data.fleet, duplicates_collapsed: scan.duplicates || 0, results: scan.results }));
       return;
     }
 

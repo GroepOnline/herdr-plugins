@@ -17,7 +17,8 @@ async function main() {
   const doctorReached = doctor !== null;
   if (!doctorReached && !pipeline && !utrechtStatus) {
     writeFragment(PLUGIN_ID, "kater-doctor", { error: "Kater doctor and Utrecht MCP tools unreachable" }, 30);
-    console.log("kater-bridge: pipeline health unreachable");
+    console.error("kater-bridge: pipeline health unreachable");
+    process.exitCode = 1;
     return;
   }
 

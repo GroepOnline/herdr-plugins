@@ -1,10 +1,10 @@
 {
   "name": "kater-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node -e \"console.log('kater-bridge: unit tests N/A (use npm run smoke for live gateway)')\"",
+    "test": "npm run build && node --test dist/common.test.js",
     "smoke": "npm run build && node dist/test-mcp.js",
     "fleet-status": "node dist/fleet-status.js",
     "doctor": "node dist/pipeline.js",

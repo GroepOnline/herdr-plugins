@@ -1,6 +1,6 @@
 id = "com.chefgroep.github-status"
 name = "GitHub PR/CI Status"
-version = "0.2.0"
+version = "0.2.1"
 min_herdr_version = "0.7.3"
 description = "Poll PR status and CI check results from GitHub"
 platforms = ["linux", "macos", "windows"]
