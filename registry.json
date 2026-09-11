@@ -15,7 +15,7 @@
     {
       "id": "com.chefgroep.github-status",
       "name": "GitHub PR/CI Status",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Poll PR status and CI check results from GitHub",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/chef-github-status",
       "categories": [
@@ -41,7 +41,7 @@
     {
       "id": "com.chefgroep.kater-bridge",
       "name": "Kater MCP Bridge",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Gateway health, doctor, PR-gate (REST) and Utrecht fleet/pipeline/ask (MCP SSE)",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/kater-bridge",
       "categories": [
@@ -79,7 +79,7 @@
     {
       "id": "com.chefgroep.fleet-health",
       "name": "Fleet Health",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Tailscale fleet scan + SSH node probes for the Fleet Ops Bar",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/fleet-health",
       "categories": [

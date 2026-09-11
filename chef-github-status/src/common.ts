@@ -20,14 +20,17 @@ export function loadDotEnv() {
 }
 
 export function pluginContext(): Record<string, unknown> {
-  try { return JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}"); }
+  try {
+    const parsed = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  }
   catch { return {}; }
 }
 
 export function contextCwd(): string {
   const ctx = pluginContext();
   for (const candidate of [ctx.focused_pane_cwd, ctx.workspace_cwd, process.cwd()]) {
-    if (typeof candidate === "string" && candidate && fs.existsSync(candidate)) return candidate;
+    if (typeof candidate === "string" && candidate && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) return candidate;
   }
   return process.cwd();
 }
@@ -43,15 +46,15 @@ export function git(args: string[]): string {
 export function githubRepoFromRemote(remote: string): { owner: string; repo: string } | null {
   const value = (remote || "").trim().replace(/\.git$/, "");
   if (!value) return null;
-  const scp = value.match(/^[^@\s]+@[^:\s]+:([^/\s]+)\/([^/\s]+)$/);
+  const scp = value.match(/^[^@\s]+@github\.com:([^/\s]+)\/([^/\s]+)$/);
   if (scp) return { owner: scp[1], repo: scp[2] };
   try {
     const u = new URL(value);
+    if (u.hostname !== "github.com") return null;
     const parts = u.pathname.replace(/^\/+|\/+$/g, "").split("/");
-    if (parts.length >= 2) return { owner: parts[parts.length - 2], repo: parts[parts.length - 1] };
+    if (parts.length === 2) return { owner: parts[0], repo: parts[1] };
   } catch { /* not a URL */ }
-  const fallback = value.match(/[:/]([^/:]+)\/([^/]+)$/);
-  return fallback ? { owner: fallback[1], repo: fallback[2] } : null;
+  return null;
 }
 
 export function writeFragment(pluginId, component, data, ttlSeconds = 60, display = "") {

@@ -71,12 +71,18 @@ export function writeFragment(pluginId: string, component: string, data: unknown
   while (true) {
     try {
       fs.mkdirSync(lockPath, { mode: 0o700 });
+      fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid }), { mode: 0o600 });
       break;
     } catch (err: any) {
       if (err?.code !== "EEXIST") throw err;
       try {
-        const age = Date.now() - fs.statSync(lockPath).mtimeMs;
-        if (age > 10000) fs.rmSync(lockPath, { recursive: true, force: true });
+        const owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+        if (typeof owner?.pid === "number") {
+          try { process.kill(owner.pid, 0); }
+          catch (ownerErr: any) {
+            if (ownerErr?.code === "ESRCH") fs.rmSync(lockPath, { recursive: true, force: true });
+          }
+        }
       } catch { /* retry */ }
       if (Date.now() >= deadline) throw new Error("timed out waiting for fleet_ops state lock");
       sleep(20);
@@ -137,9 +143,12 @@ export function cacheSet(key: string, value: unknown, ttlSeconds = 60) {
 
 export function pluginContextCwd(): string {
   let ctx: Record<string, unknown> = {};
-  try { ctx = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}"); } catch { /* ignore */ }
+  try {
+    const parsed = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ctx = parsed;
+  } catch { /* ignore */ }
   for (const candidate of [ctx.focused_pane_cwd, ctx.workspace_cwd, process.cwd()]) {
-    if (typeof candidate === "string" && candidate && fs.existsSync(candidate)) return candidate;
+    if (typeof candidate === "string" && candidate && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) return candidate;
   }
   return process.cwd();
 }
