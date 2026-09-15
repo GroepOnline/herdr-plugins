@@ -106,6 +106,7 @@ describe("registration", () => {
   it("requires one owner and unique dynamic identities", () => {
     const cfg = config();
     assert.equal(validateConfig(cfg), cfg);
+    assert.equal(validateConfig({ ...cfg, workers: [{ ...cfg.workers[0], pane_id: "w57:pC" }] }).workers[0].pane_id, "w57:pC");
     assert.equal(identityMatches(cfg.director, agent(cfg.director, "idle")), true);
     assert.throws(() => validateConfig({ ...cfg, owner: "" }), /owner/);
     assert.throws(() => validateConfig({ ...cfg, workers: [{ ...cfg.workers[0], terminal_id: cfg.director.terminal_id }] }), /unique terminal_id/);
