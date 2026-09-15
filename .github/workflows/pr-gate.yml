@@ -21,6 +21,8 @@ jobs:
           exit $fail
       - name: chatgpt-bridge capture selftest
         run: node chatgpt-bridge/src/mcp-server.js selftest
+      - name: Dirigent dispatch tests
+        run: npm test --prefix dirigent-dispatch
   typescript:
     runs-on: ubuntu-latest
     strategy:
