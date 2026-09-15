@@ -1,0 +1,66 @@
+id = "com.chefgroep.dirigent-dispatch"
+name = "Dirigent Dispatch"
+version = "0.1.0"
+min_herdr_version = "0.7.5"
+description = "Route worker lifecycle transitions to one registered dirigent without polling"
+platforms = ["linux", "macos", "windows"]
+
+[[startup]]
+command = ["node", "src/index.js", "startup"]
+
+[[actions]]
+id = "status"
+title = "Show dirigent dispatch status"
+description = "Show registration, pending transitions and delivery state"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "status"]
+
+[[actions]]
+id = "preview"
+title = "Preview dirigent dispatch"
+description = "Validate registration and preview the pending compact message without delivery"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "preview"]
+
+[[actions]]
+id = "start"
+title = "Start dirigent dispatch"
+description = "Validate exact member identities and enable event processing"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "start"]
+
+[[actions]]
+id = "pause"
+title = "Pause dirigent dispatch"
+description = "Pause event processing while preserving pending transitions"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "pause"]
+
+[[actions]]
+id = "resume"
+title = "Resume dirigent dispatch"
+description = "Resume event processing and attempt pending delivery"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "resume"]
+
+[[actions]]
+id = "stop"
+title = "Stop dirigent dispatch"
+description = "Stop the campaign and discard pending transitions"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "stop"]
+
+[[actions]]
+id = "retry-ambiguous"
+title = "Retry ambiguous dirigent delivery"
+description = "Explicitly release an ambiguous delivery claim and retry pending transitions"
+contexts = ["global", "workspace"]
+command = ["node", "src/index.js", "retry-ambiguous"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "src/index.js", "event"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "src/index.js", "event"]

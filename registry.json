@@ -25,6 +25,19 @@
       "min_herdr_version": "0.7.3"
     },
     {
+      "id": "com.chefgroep.dirigent-dispatch",
+      "name": "Dirigent Dispatch",
+      "version": "0.1.0",
+      "description": "Route worker lifecycle transitions to one registered dirigent without polling",
+      "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/dirigent-dispatch",
+      "categories": [
+        "productivity",
+        "agents",
+        "herdr"
+      ],
+      "min_herdr_version": "0.7.5"
+    },
+    {
       "id": "com.chefgroep.pi-eval",
       "name": "Pi Session Eval",
       "version": "0.1.0",
