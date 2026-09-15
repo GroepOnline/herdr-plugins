@@ -171,88 +171,86 @@ function markDirectorProcessed(state, live) {
   }
 }
 
+async function liveEventMember(config, state, client, kind, paneId) {
+  let live = null;
+  try {
+    live = kind === "pane_exited" ? await client.getPane(paneId) : await client.getAgent(paneId);
+  } catch {
+    // An exited pane can be matched against its last verified terminal identity.
+  }
+  const resolved = memberFromLive(config, live) ||
+    (kind === "pane_exited" ? memberFromKnownPane(config, state, paneId) : null);
+  return { live, resolved };
+}
+
+function exitIdentityMatches(member, live, kind) {
+  return kind === "pane_exited" && live && member.terminal_id === live.terminal_id &&
+    (!live.agent || !member.agent || member.agent === live.agent) &&
+    (!live.agent_session || sameSession(member.agent_session, live.agent_session));
+}
+
+function queueWorkerTransition(state, member, live, paneId, status, seq) {
+  const previous = state.transitions[member.terminal_id];
+  if (previous?.status === status && Number(previous.seq || 0) >= seq) {
+    return { result: "ignored", reason: "duplicate", status, member: member.name };
+  }
+  state.transitions[member.terminal_id] = { status, seq, at: new Date().toISOString() };
+  if (!NOTIFY_STATUSES.has(status)) return { result: "tracked", status, member: member.name };
+  state.pending.push({
+    id: `${member.terminal_id}:${state.next_transition_id}`,
+    terminal_id: member.terminal_id,
+    pane_id: live?.pane_id || paneId,
+    worker: member.name,
+    task: trim(member.task, 180),
+    evidence: trim(member.evidence || `herdr agent read ${live?.pane_id || paneId}`, 220),
+    status,
+    seq,
+    observed_at: new Date().toISOString(),
+    claim_id: null,
+  });
+  state.next_transition_id += 1;
+  state.pending = state.pending.slice(-100);
+  return { result: "queued", status, member: member.name };
+}
+
+async function processEvent(config, state, envelope, client, fallbackEvent) {
+  const kind = eventKind(envelope, fallbackEvent);
+  if (!new Set(["pane_agent_status_changed", "pane_exited"]).has(kind)) {
+    return { result: "ignored", reason: "irrelevant_event", event: kind };
+  }
+  if (state.mode !== "running") return { result: "ignored", reason: state.mode };
+  const paneId = eventPane(envelope);
+  if (!paneId) return { result: "ignored", reason: "missing_pane_id" };
+
+  const { live, resolved } = await liveEventMember(config, state, client, kind, paneId);
+  if (!resolved) {
+    const configured = [config.director, ...config.workers].some((member) => member.pane_id === paneId);
+    const reason = configured ? "stale_identity" : "unregistered_pane";
+    pushAudit(state, { result: "ignored", reason, pane_id: paneId });
+    return { result: "ignored", reason, pane_id: paneId };
+  }
+  const { role, member } = resolved;
+  if (live && !identityMatches(member, live) && !exitIdentityMatches(member, live, kind)) {
+    pushAudit(state, { result: "ignored", reason: "stale_identity", pane_id: paneId, member: member.name });
+    return { result: "ignored", reason: "stale_identity", pane_id: paneId };
+  }
+  if (live) rememberMember(state, member, live);
+
+  const status = eventStatus(envelope, fallbackEvent);
+  const seq = Number(live?.state_change_seq || state.members[member.terminal_id]?.state_change_seq || 0);
+  if (role === "director") {
+    if (live) markDirectorProcessed(state, live);
+    return { result: "ignored", reason: "director_event", status };
+  }
+  if (status !== "exited" && !ACTIVE_STATUSES.has(status)) {
+    return { result: "ignored", reason: "irrelevant_status", status };
+  }
+  return queueWorkerTransition(state, member, live, paneId, status, seq);
+}
+
 export async function processEvents(config, state, envelopes, client, fallbackEvent = "") {
   const outcomes = [];
-  for (const envelope of envelopes) {
-    const kind = eventKind(envelope, fallbackEvent);
-    if (!new Set(["pane_agent_status_changed", "pane_exited"]).has(kind)) {
-      outcomes.push({ result: "ignored", reason: "irrelevant_event", event: kind });
-      continue;
-    }
-    if (state.mode !== "running") {
-      outcomes.push({ result: "ignored", reason: state.mode });
-      continue;
-    }
-    const paneId = eventPane(envelope);
-    if (!paneId) {
-      outcomes.push({ result: "ignored", reason: "missing_pane_id" });
-      continue;
-    }
-
-    let live = null;
-    try {
-      live = kind === "pane_exited" ? await client.getPane(paneId) : await client.getAgent(paneId);
-    } catch {
-      live = null;
-    }
-    const resolved = memberFromLive(config, live) || (kind === "pane_exited" ? memberFromKnownPane(config, state, paneId) : null);
-    if (!resolved) {
-      const configuredPane = [config.director, ...config.workers].find((member) => member.pane_id === paneId);
-      const reason = configuredPane ? "stale_identity" : "unregistered_pane";
-      pushAudit(state, { result: "ignored", reason, pane_id: paneId });
-      outcomes.push({ result: "ignored", reason, pane_id: paneId });
-      continue;
-    }
-    const { role, member } = resolved;
-    const exitIdentityMatches = kind === "pane_exited" && live &&
-      member.terminal_id === live.terminal_id &&
-      (!live.agent || !member.agent || member.agent === live.agent) &&
-      (!live.agent_session || sameSession(member.agent_session, live.agent_session));
-    if (live && !identityMatches(member, live) && !exitIdentityMatches) {
-      pushAudit(state, { result: "ignored", reason: "stale_identity", pane_id: paneId, member: member.name });
-      outcomes.push({ result: "ignored", reason: "stale_identity", pane_id: paneId });
-      continue;
-    }
-    if (live) rememberMember(state, member, live);
-
-    const status = eventStatus(envelope, fallbackEvent);
-    const seq = Number(live?.state_change_seq || state.members[member.terminal_id]?.state_change_seq || 0);
-    if (role === "director") {
-      if (live) markDirectorProcessed(state, live);
-      outcomes.push({ result: "ignored", reason: "director_event", status });
-      continue;
-    }
-    if (status !== "exited" && !ACTIVE_STATUSES.has(status)) {
-      outcomes.push({ result: "ignored", reason: "irrelevant_status", status });
-      continue;
-    }
-    const previous = state.transitions[member.terminal_id];
-    if (previous?.status === status && Number(previous.seq || 0) >= seq) {
-      outcomes.push({ result: "ignored", reason: "duplicate", status, member: member.name });
-      continue;
-    }
-    state.transitions[member.terminal_id] = { status, seq, at: new Date().toISOString() };
-    if (!NOTIFY_STATUSES.has(status)) {
-      outcomes.push({ result: "tracked", status, member: member.name });
-      continue;
-    }
-    const transition = {
-      id: `${member.terminal_id}:${state.next_transition_id}`,
-      terminal_id: member.terminal_id,
-      pane_id: live?.pane_id || paneId,
-      worker: member.name,
-      task: trim(member.task, 180),
-      evidence: trim(member.evidence || `herdr agent read ${live?.pane_id || paneId}`, 220),
-      status,
-      seq,
-      observed_at: new Date().toISOString(),
-      claim_id: null,
-    };
-    state.next_transition_id += 1;
-    state.pending.push(transition);
-    state.pending = state.pending.slice(-100);
-    outcomes.push({ result: "queued", status, member: member.name });
-  }
+  for (const envelope of envelopes) outcomes.push(await processEvent(config, state, envelope, client, fallbackEvent));
   return outcomes;
 }
 
@@ -311,62 +309,40 @@ export function releaseAmbiguous(state) {
   return released;
 }
 
-export async function attemptDelivery(config, state, client, persist = async () => {}) {
-  if (state.mode !== "running" || state.pending.length === 0) return { result: "noop" };
-  if (state.pending.some((item) => item.ambiguous || item.claim_id)) {
-    state.last_result = { result: "blocked", reason: "ambiguous_delivery", at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
-  }
+async function saveResult(state, persist, result) {
+  state.last_result = { ...result, at: new Date().toISOString() };
+  await persist(state);
+  return state.last_result;
+}
 
+async function inspectDirector(config, state, client) {
   const target = state.members[config.director.terminal_id]?.pane_id || config.director.pane_id;
   let director;
   try {
     director = await client.getAgent(target);
   } catch (error) {
-    state.last_result = { result: "blocked", reason: "director_disconnected", detail: trim(error?.message, 200), at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
+    return { error: { result: "blocked", reason: "director_disconnected", detail: trim(error?.message, 200) } };
   }
   if (!identityMatches(config.director, director)) {
-    state.last_result = { result: "blocked", reason: "stale_director_identity", at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
+    return { error: { result: "blocked", reason: "stale_director_identity" } };
   }
   rememberMember(state, config.director, director);
   if (director.agent_status === "working") {
-    state.last_result = { result: "queued", reason: "director_busy", at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
+    return { error: { result: "queued", reason: "director_busy" } };
   }
   if (!new Set(["idle", "done"]).has(director.agent_status)) {
-    state.last_result = { result: "blocked", reason: `director_${director.agent_status || "unknown"}`, at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
+    return { error: { result: "blocked", reason: `director_${director.agent_status || "unknown"}` } };
   }
-
-  let screen;
   try {
-    screen = await client.readAgent(director.pane_id);
+    const composer = inspectComposer(config.director.adapter, await client.readAgent(director.pane_id));
+    if (composer === "empty") return { director };
+    return { error: { result: "blocked", reason: composer === "occupied" ? "existing_user_input" : "input_state_unknown" } };
   } catch (error) {
-    state.last_result = { result: "blocked", reason: "director_screen_unavailable", detail: trim(error?.message, 200), at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
+    return { error: { result: "blocked", reason: "director_screen_unavailable", detail: trim(error?.message, 200) } };
   }
-  const composer = inspectComposer(config.director.adapter, screen);
-  if (composer !== "empty") {
-    state.last_result = { result: "blocked", reason: composer === "occupied" ? "existing_user_input" : "input_state_unknown", at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
-  }
+}
 
-  const message = buildMessage(config, state.pending);
-  if (config.delivery.mode === "preview") {
-    state.last_result = { result: "preview", message, at: new Date().toISOString() };
-    await persist(state);
-    return state.last_result;
-  }
-
+function claimDelivery(state, director) {
   const attemptId = randomUUID();
   const ids = state.pending.map((item) => item.id);
   for (const item of state.pending) item.claim_id = attemptId;
@@ -379,24 +355,38 @@ export async function attemptDelivery(config, state, client, persist = async () 
   };
   state.deliveries.push(delivery);
   state.deliveries = state.deliveries.slice(-100);
-  await persist(state);
+  return { attemptId, ids, delivery };
+}
 
+async function submitDelivery(state, client, director, message, persist) {
+  const { attemptId, ids, delivery } = claimDelivery(state, director);
+  await persist(state);
   try {
     await client.promptAgent(director.pane_id, message);
     delivery.status = "submitted";
     delivery.submitted_at = new Date().toISOString();
     state.pending = state.pending.filter((item) => !ids.includes(item.id));
-    state.last_result = { result: "submitted", attempt_id: attemptId, count: ids.length, at: delivery.submitted_at };
+    return saveResult(state, persist, { result: "submitted", attempt_id: attemptId, count: ids.length });
   } catch (error) {
     delivery.status = "ambiguous";
     delivery.blocked_reason = trim(error?.message || "delivery failed", 200);
     for (const item of state.pending) {
       if (item.claim_id === attemptId) item.ambiguous = true;
     }
-    state.last_result = { result: "blocked", reason: "ambiguous_delivery", attempt_id: attemptId, at: new Date().toISOString() };
+    return saveResult(state, persist, { result: "blocked", reason: "ambiguous_delivery", attempt_id: attemptId });
   }
-  await persist(state);
-  return state.last_result;
+}
+
+export async function attemptDelivery(config, state, client, persist = async () => {}) {
+  if (state.mode !== "running" || state.pending.length === 0) return { result: "noop" };
+  if (state.pending.some((item) => item.ambiguous || item.claim_id)) {
+    return saveResult(state, persist, { result: "blocked", reason: "ambiguous_delivery" });
+  }
+  const inspected = await inspectDirector(config, state, client);
+  if (inspected.error) return saveResult(state, persist, inspected.error);
+  const message = buildMessage(config, state.pending);
+  if (config.delivery.mode === "preview") return saveResult(state, persist, { result: "preview", message });
+  return submitDelivery(state, client, inspected.director, message, persist);
 }
 
 export async function verifyRegistration(config, client) {
