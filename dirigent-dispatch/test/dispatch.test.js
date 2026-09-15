@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { acquireLock, releaseLock } from "../src/index.js";
 import {
   attemptDelivery,
   buildMessage,
@@ -143,14 +147,17 @@ describe("event filtering and coalescing", () => {
     assert.equal(state.pending.length, 0);
   });
 
-  it("accepts an exit only for a live or previously verified terminal", async () => {
+  it("accepts an exit only with current terminal and session evidence", async () => {
     const cfg = config();
     const state = runningState(cfg);
-    state.members[cfg.workers[0].terminal_id] = { pane_id: "w1:p2", state_change_seq: 3 };
-    const client = clientFor(cfg);
-    client.getPane = async () => { throw new Error("already gone"); };
-    await processEvents(cfg, state, [event("w1:p2", "", "pane_exited")], client);
+    await processEvents(cfg, state, [event("w1:p2", "", "pane_exited")], clientFor(cfg));
     assert.equal(state.pending[0].status, "exited");
+
+    const unverifiable = runningState(cfg);
+    const missingSession = agent(cfg.workers[0], "unknown", 3, { agent_session: undefined });
+    const outcomes = await processEvents(cfg, unverifiable, [event("w1:p2", "", "pane_exited")], clientFor(cfg, { workerIdentity: missingSession }));
+    assert.equal(outcomes[0].reason, "stale_identity");
+    assert.equal(unverifiable.pending.length, 0);
   });
 
   it("uses director events only to acknowledge processing, never as worker notifications", async () => {
@@ -247,6 +254,49 @@ describe("delivery", () => {
     assert.equal(result.result, "preview");
     assert.equal(state.pending.length, 1);
     assert.equal(client.calls.length, 0);
+  });
+
+  it("removes only transitions included in a size-bounded delivery", async () => {
+    const cfg = config();
+    const state = pendingState(cfg);
+    for (let index = 0; index < 12; index += 1) {
+      state.pending.push({
+        ...state.pending[0],
+        id: `extra-${index}`,
+        worker: `worker-${index}`,
+        task: "x".repeat(180),
+        evidence: `/handoffs/${"y".repeat(180)}`,
+      });
+    }
+    const client = clientFor(cfg);
+    await attemptDelivery(cfg, state, client);
+    assert.equal(client.calls.length, 1);
+    assert.ok(client.calls[0].text.length <= 1400);
+    assert.ok(state.pending.length > 0);
+    assert.ok(state.pending.every((item) => !item.claim_id));
+  });
+});
+
+describe("dispatch lock", () => {
+  it("does not reap a live owner or release another owner's lease", async () => {
+    const previous = process.env.HERDR_PLUGIN_STATE_DIR;
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dirigent-lock-"));
+    process.env.HERDR_PLUGIN_STATE_DIR = dir;
+    try {
+      const lease = await acquireLock("dispatch.lock");
+      const old = new Date(0);
+      await utimes(lease.path, old, old);
+      assert.equal(await acquireLock("dispatch.lock"), null);
+      const ownerPath = path.join(lease.path, "owner.json");
+      const owner = JSON.parse(await readFile(ownerPath, "utf8"));
+      await writeFile(ownerPath, JSON.stringify({ ...owner, token: "replacement" }));
+      await releaseLock(lease);
+      assert.equal(JSON.parse(await readFile(ownerPath, "utf8")).token, "replacement");
+    } finally {
+      if (previous === undefined) delete process.env.HERDR_PLUGIN_STATE_DIR;
+      else process.env.HERDR_PLUGIN_STATE_DIR = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

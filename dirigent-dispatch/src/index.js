@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
   attemptDelivery,
@@ -73,34 +74,59 @@ async function loadState() {
   return { ...newState(), ...(await readJson(statePath(), newState())) };
 }
 
-async function acquireLock(name, waitMs = 0) {
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function reapAbandonedLock(lock) {
+  const ownerPath = path.join(lock, "owner.json");
+  const owner = await readJson(ownerPath, null).catch(() => null);
+  if (Number.isInteger(owner?.pid) && owner.pid > 0 && processIsAlive(owner.pid)) return false;
+  const age = Date.now() - (await stat(lock).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
+  if (!owner && age <= LOCK_STALE_MS) return false;
+  const current = await readJson(ownerPath, null).catch(() => null);
+  if (owner?.token && current?.token !== owner.token) return false;
+  await rm(lock, { recursive: true, force: true });
+  return true;
+}
+
+export async function acquireLock(name, waitMs = 0) {
   const lock = path.join(stateDir(), name);
   await ensurePrivateDir(stateDir());
   const deadline = Date.now() + waitMs;
   for (;;) {
+    const token = randomUUID();
     try {
       await mkdir(lock, { mode: 0o700 });
-      return lock;
+      await writeJson(path.join(lock, "owner.json"), { token, pid: process.pid, created_at: Date.now() });
+      return { path: lock, token };
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
-      const age = Date.now() - (await stat(lock).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
-      if (age > LOCK_STALE_MS) {
-        await rm(lock, { recursive: true, force: true });
-        continue;
-      }
+      if (await reapAbandonedLock(lock)) continue;
       if (Date.now() >= deadline) return null;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
 }
 
+export async function releaseLock(lease) {
+  if (!lease) return;
+  const owner = await readJson(path.join(lease.path, "owner.json"), null).catch(() => null);
+  if (owner?.token === lease.token) await rm(lease.path, { recursive: true, force: true });
+}
+
 async function withLock(fn, waitMs = 5000) {
-  const lock = await acquireLock("dispatch.lock", waitMs);
-  if (!lock) throw new Error("dispatch is busy");
+  const lease = await acquireLock("dispatch.lock", waitMs);
+  if (!lease) throw new Error("dispatch is busy");
   try {
     return await fn();
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    await releaseLock(lease);
   }
 }
 
@@ -208,18 +234,18 @@ async function runEvent(client) {
   const config = await loadConfig(true);
   if (!config) return { result: "ignored", reason: "unconfigured" };
   await spoolEvent();
-  let lock = await acquireLock("dispatch.lock", 15_000);
-  if (!lock) return { result: "queued_for_next_dispatch" };
+  let lease = await acquireLock("dispatch.lock", 15_000);
+  if (!lease) return { result: "queued_for_next_dispatch" };
   let result = { result: "coalesced" };
   for (;;) {
     try {
       if (await inboxHasEvents()) result = await processCycle(client, config.delivery.coalesce_ms ?? 250);
     } finally {
-      await rm(lock, { recursive: true, force: true });
+      await releaseLock(lease);
     }
     if (!(await inboxHasEvents())) break;
-    lock = await acquireLock("dispatch.lock", 0);
-    if (!lock) break;
+    lease = await acquireLock("dispatch.lock", 0);
+    if (!lease) break;
   }
   return result;
 }
@@ -327,7 +353,9 @@ async function main() {
   console.log(JSON.stringify({ ok: true, action, ...result }));
 }
 
-main().catch((error) => {
-  console.error(JSON.stringify({ ok: false, error: error?.message || String(error) }));
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(JSON.stringify({ ok: false, error: error?.message || String(error) }));
+    process.exitCode = 1;
+  });
+}

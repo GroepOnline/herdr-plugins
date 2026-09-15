@@ -55,6 +55,7 @@ function validateMember(member, label, director = false) {
   if (!TERMINAL_ID.test(member.terminal_id)) throw new Error(`${label}.terminal_id is invalid`);
   if (member.agent !== undefined) assertString(member.agent, `${label}.agent`, 80);
   validateSession(member.agent_session, label);
+  if (!member.agent_session) throw new Error(`${label}.agent_session is required`);
   if (director) {
     assertString(member.adapter, `${label}.adapter`, 40);
     if (!ADAPTERS.has(member.adapter)) throw new Error(`${label}.adapter must be pi or codex`);
@@ -139,15 +140,6 @@ function memberFromLive(config, live) {
   return worker ? { role: "worker", member: worker } : null;
 }
 
-function memberFromKnownPane(config, state, paneId) {
-  const known = Object.entries(state.members).find(([, value]) => value.pane_id === paneId);
-  if (!known) return null;
-  const [terminalId] = known;
-  if (config.director.terminal_id === terminalId) return { role: "director", member: config.director };
-  const worker = config.workers.find((candidate) => candidate.terminal_id === terminalId);
-  return worker ? { role: "worker", member: worker } : null;
-}
-
 function rememberMember(state, member, live) {
   state.members[member.terminal_id] = {
     name: member.name,
@@ -171,22 +163,14 @@ function markDirectorProcessed(state, live) {
   }
 }
 
-async function liveEventMember(config, state, client, kind, paneId) {
+async function liveEventMember(config, client, kind, paneId) {
   let live = null;
   try {
     live = kind === "pane_exited" ? await client.getPane(paneId) : await client.getAgent(paneId);
   } catch {
     // An exited pane can be matched against its last verified terminal identity.
   }
-  const resolved = memberFromLive(config, live) ||
-    (kind === "pane_exited" ? memberFromKnownPane(config, state, paneId) : null);
-  return { live, resolved };
-}
-
-function exitIdentityMatches(member, live, kind) {
-  return kind === "pane_exited" && live && member.terminal_id === live.terminal_id &&
-    (!live.agent || !member.agent || member.agent === live.agent) &&
-    (!live.agent_session || sameSession(member.agent_session, live.agent_session));
+  return { live, resolved: memberFromLive(config, live) };
 }
 
 function queueWorkerTransition(state, member, live, paneId, status, seq) {
@@ -222,7 +206,7 @@ async function processEvent(config, state, envelope, client, fallbackEvent) {
   const paneId = eventPane(envelope);
   if (!paneId) return { result: "ignored", reason: "missing_pane_id" };
 
-  const { live, resolved } = await liveEventMember(config, state, client, kind, paneId);
+  const { live, resolved } = await liveEventMember(config, client, kind, paneId);
   if (!resolved) {
     const configured = [config.director, ...config.workers].some((member) => member.pane_id === paneId);
     const reason = configured ? "stale_identity" : "unregistered_pane";
@@ -230,7 +214,7 @@ async function processEvent(config, state, envelope, client, fallbackEvent) {
     return { result: "ignored", reason, pane_id: paneId };
   }
   const { role, member } = resolved;
-  if (live && !identityMatches(member, live) && !exitIdentityMatches(member, live, kind)) {
+  if (!identityMatches(member, live)) {
     pushAudit(state, { result: "ignored", reason: "stale_identity", pane_id: paneId, member: member.name });
     return { result: "ignored", reason: "stale_identity", pane_id: paneId };
   }
@@ -269,15 +253,31 @@ export function inspectComposer(adapter, screen) {
   return "unsupported";
 }
 
-export function buildMessage(config, pending) {
-  const rows = pending.map((item) =>
+function formatBatch(config, items) {
+  const rows = items.map((item) =>
     `${item.worker}: ${item.status}; task=${trim(item.task, 120)}; evidence=${trim(item.evidence, 160)}`,
   );
-  return trim([
-    `[Herdr/${config.campaign}] ${pending.length} worker transition${pending.length === 1 ? "" : "s"}.`,
+  return [
+    `[Herdr/${config.campaign}] ${items.length} worker transition${items.length === 1 ? "" : "s"}.`,
     ...rows,
     "Read the referenced evidence, distinguish idle from completion, update the checkpoint, and continue only within the registered campaign.",
-  ].join("\n"), 1400);
+  ].join("\n").replace(/\s+/g, " ").trim();
+}
+
+export function buildDeliveryBatch(config, pending, maxLength = 1400) {
+  const included = [];
+  for (const item of pending) {
+    if (included.length && formatBatch(config, [...included, item]).length > maxLength) break;
+    included.push(item);
+  }
+  return {
+    ids: included.map((item) => item.id),
+    message: trim(formatBatch(config, included), maxLength),
+  };
+}
+
+export function buildMessage(config, pending) {
+  return buildDeliveryBatch(config, pending).message;
 }
 
 export function recoverInterruptedDelivery(state) {
@@ -342,10 +342,11 @@ async function inspectDirector(config, state, client) {
   }
 }
 
-function claimDelivery(state, director) {
+function claimDelivery(state, director, ids) {
   const attemptId = randomUUID();
-  const ids = state.pending.map((item) => item.id);
-  for (const item of state.pending) item.claim_id = attemptId;
+  for (const item of state.pending) {
+    if (ids.includes(item.id)) item.claim_id = attemptId;
+  }
   const delivery = {
     attempt_id: attemptId,
     transition_ids: ids,
@@ -358,11 +359,11 @@ function claimDelivery(state, director) {
   return { attemptId, ids, delivery };
 }
 
-async function submitDelivery(state, client, director, message, persist) {
-  const { attemptId, ids, delivery } = claimDelivery(state, director);
+async function submitDelivery(state, client, director, batch, persist) {
+  const { attemptId, ids, delivery } = claimDelivery(state, director, batch.ids);
   await persist(state);
   try {
-    await client.promptAgent(director.pane_id, message);
+    await client.promptAgent(director.pane_id, batch.message);
     delivery.status = "submitted";
     delivery.submitted_at = new Date().toISOString();
     state.pending = state.pending.filter((item) => !ids.includes(item.id));
@@ -384,9 +385,9 @@ export async function attemptDelivery(config, state, client, persist = async () 
   }
   const inspected = await inspectDirector(config, state, client);
   if (inspected.error) return saveResult(state, persist, inspected.error);
-  const message = buildMessage(config, state.pending);
-  if (config.delivery.mode === "preview") return saveResult(state, persist, { result: "preview", message });
-  return submitDelivery(state, client, inspected.director, message, persist);
+  const batch = buildDeliveryBatch(config, state.pending);
+  if (config.delivery.mode === "preview") return saveResult(state, persist, { result: "preview", message: batch.message });
+  return submitDelivery(state, client, inspected.director, batch, persist);
 }
 
 export async function verifyRegistration(config, client) {

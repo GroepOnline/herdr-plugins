@@ -69,7 +69,7 @@ Use current values from `herdr agent get <target>`; do not copy the example iden
 }
 ```
 
-`owner` is singular. Names, panes, terminal IDs, sessions, tasks, and team size are data, not plugin constants. Terminal identity survives pane moves; a mismatched terminal or configured session is rejected as stale.
+`owner` is singular. Names, panes, terminal IDs, sessions, tasks, and team size are data, not plugin constants. Terminal identity survives pane moves; a missing or mismatched terminal/session is rejected as stale, including for exit events.
 
 Supported delivery adapters are currently `pi` and `codex`. Both have fixture-tested, conservative empty-composer checks. Unknown or occupied input is blocked. This is not a claim of live compatibility with every CLI.
 
@@ -92,7 +92,7 @@ herdr plugin action invoke start --plugin com.chefgroep.dirigent-dispatch
 
 With `delivery.mode: "preview"`, events remain pending and no input is sent. To activate delivery, change the mode to `"live"`, rerun `preview`, then rerun `start` so the changed configuration and exact identities are registered.
 
-The plugin listens to `pane.agent_status_changed` and `pane.exited`. `working` and `unknown` are tracked but do not notify. `idle`, `done`, `blocked`, and `exited` remain distinct. Duplicate consecutive states are dropped; distinct transitions arriving in one burst share one compact message.
+The plugin listens to `pane.agent_status_changed` and `pane.exited`. `working` and `unknown` are tracked but do not notify. `idle`, `done`, `blocked`, and `exited` remain distinct. Duplicate consecutive states are dropped; distinct transitions arriving in one burst share one compact message. If that message reaches its size limit, omitted transitions remain pending for the next delivery.
 
 ## Delivery states
 
