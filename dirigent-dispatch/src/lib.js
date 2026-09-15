@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 const TERMINAL_ID = /^[A-Za-z0-9._:-]{1,160}$/;
-const PANE_ID = /^[A-Za-z0-9_-]+:p[0-9]+$/;
+const PANE_ID = /^[A-Za-z0-9_-]+:p[A-Za-z0-9]+$/;
 const NOTIFY_STATUSES = new Set(["idle", "done", "blocked", "exited"]);
 const ACTIVE_STATUSES = new Set(["working", "idle", "done", "blocked", "unknown"]);
 const ADAPTERS = new Set(["pi", "codex"]);
