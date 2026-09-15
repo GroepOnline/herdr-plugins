@@ -75,7 +75,7 @@ function redactCapture(input) {
 
 function safePaneId(value) {
   const pane = String(value || "");
-  if (!/^[A-Za-z0-9_-]+:p[0-9]+$/.test(pane)) {
+  if (!/^[A-Za-z0-9_-]+:p[A-Za-z0-9]+$/.test(pane)) {
     throw new Error(`invalid pane id: ${pane || "<empty>"}`);
   }
   return pane;
@@ -217,6 +217,7 @@ function selftest() {
     throw new Error("capture byte-cap selftest failed");
   }
   safePaneId("w3Q:p1");
+  safePaneId("w57:pC");
   if (actionPaneTarget({ HERDR_PANE_ID: "w3Q:p2" }) !== "w3Q:p2" || actionPaneTarget({}) !== "") {
     throw new Error("capture action pane-context selftest failed");
   }
