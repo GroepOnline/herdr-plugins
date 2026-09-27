@@ -1,0 +1,13 @@
+id = "com.chefgroep.grep"
+name = "Grep"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "fzf + ripgrep live-grep over de repo van de actieve pane, zonder nvim (vim-loos alternatief voor herdr-grep-nvim)"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "search"
+title = "Grep in repo"
+description = "Live-grep (rg + fzf) over de repo van de gefocuste pane; selectie opent bestand:regel in een nieuwe pane met $EDITOR (fallback less)"
+contexts = ["pane", "workspace"]
+command = ["bash", "src/search.sh"]
