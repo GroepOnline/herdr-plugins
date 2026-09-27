@@ -8,11 +8,21 @@ vim-dependency; openen gaat via `$EDITOR` met `less` als fallback.
 
 | Action | Wat | Output |
 |---|---|---|
-| `search [query]` | Live-grep (rg + fzf `--disabled` + `change:reload`) over de repo-root van de gefocuste pane; `bestand:regel:tekst`, Enter opent `bestand:regel` in een nieuwe herdr-pane | selectie of matchlijst |
+| `search` | Dispatcher: bepaalt scope (repo van gefocuste pane, query uit geselecteerde tekst) en opent de live-grep UI in een nieuwe pane (`--focus`) | `grep-pane <id> (scope <dir>)` |
 
-Scope-bepaling: `HERDR_GREP_SCOPE` > `HERDR_PLUGIN_CONTEXT_JSON` (pane-cwd) >
-`HERDR_PANE_ID` via `$HERDR_BIN_PATH pane get` > `pane current` > `$PWD`;
-binnen een git-repo wordt de toplevel als scope gebruikt.
+Herdr-actions draaien headless (stdio gepiped, nooit een TTY — zie herdr
+`src/app/api/plugins/runtime.rs`), dus fzf loopt niet in de action zelf maar
+in de nieuw geopende pane (echte TTY). De UI is dezelfde `src/search.sh` met
+`--ui`, gestart via `pane split` + `pane run` (zelfde `$HERDR_BIN_PATH`-conventie
+als `dirigent-dispatch`). In de UI: live-grep via fzf (`--disabled` +
+`change:reload`), `bestand:regel:tekst`, Enter opent `bestand:regel` in wéér
+een nieuwe pane.
+
+Scope-bepaling: `--scope` > `HERDR_GREP_SCOPE` > `HERDR_PLUGIN_CONTEXT_JSON`
+(`focused_pane_cwd`, dan `workspace_cwd`) > `HERDR_PANE_ID` via
+`$HERDR_BIN_PATH pane get` > `pane current` > `$PWD`; binnen een git-repo wordt
+de toplevel als scope gebruikt. Initiële query: `--query` > `$1` >
+`HERDR_GREP_QUERY` > `selected_text` uit de action-context.
 
 Openen: `herdr pane split --current --direction right --cwd <scope> --no-focus`
 gevolgd door `herdr pane run <nieuwe-pane> $EDITOR +<regel> <bestand>`
@@ -21,8 +31,12 @@ gerespecteerd; zonder `$EDITOR` is de fallback `less`, nooit vim.
 Herdr-aanroepen gaan via `$HERDR_BIN_PATH` (fallback `herdr`),
 zelfde conventie als `dirigent-dispatch`.
 
-Zonder TTY (bv. `herdr plugin action invoke`) degradeert de action naar een
-niet-interactieve rg-dump (max 50 matches) in plaats van te falen.
+Zonder TTY (direct run, bv. in tests) degradeert het script naar een
+niet-interactieve rg-dump (max 50 matches) in plaats van te falen. Let op:
+`herdr plugin action invoke` stuurt géén caller-env mee (invoke is een
+socket-API-call; de server spawnt de action met alleen `HERDR_PLUGIN_*`-vars),
+dus `HERDR_GREP_QUERY`/`HERDR_GREP_SCOPE` werken alleen bij direct runnen van
+`src/search.sh`, niet via invoke.
 
 | Env | Default | Betekenis |
 |---|---|---|

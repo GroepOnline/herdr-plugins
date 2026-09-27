@@ -11,13 +11,21 @@ of the focused/calling pane. No nvim dependency (unlike herdr-grep-nvim).
 ## Invoke
 
 ```bash
-herdr plugin action invoke com.chefgroep.grep.search
+herdr plugin action invoke search --plugin com.chefgroep.grep
 ```
 
-With a query (non-interactive use, tests, agents):
+The action is a dispatcher (actions run headless, never a TTY): it opens the
+live-grep UI in a new focused pane, scoped to the repo of the focused pane
+(`HERDR_PLUGIN_CONTEXT_JSON` → `focused_pane_cwd`, else `HERDR_PANE_ID`).
+Selected text in the focused pane becomes the initial query. Enter on a match
+opens `file:line` in yet another pane via `$EDITOR` (fallback `less`).
+
+Direct (non-action) use, tests, agents — Env only works here, invoke passes no
+caller env over the socket API:
 
 ```bash
-HERDR_GREP_QUERY='pattern' herdr plugin action invoke com.chefgroep.grep.search
+bash src/search.sh --scope DIR --query 'pattern'   # TTY: interactive UI
+bash src/search.sh 'pattern' < /dev/null           # no TTY: rg dump, max 50
 ```
 
 ## Env
@@ -31,4 +39,4 @@ HERDR_GREP_QUERY='pattern' herdr plugin action invoke com.chefgroep.grep.search
 | `EDITOR` | opener for selection (default `less`; never vim as fallback) |
 
 Requires `fzf` + `rg` on PATH. Scope detection reads the focused pane cwd via
-`HERDR_BIN_PATH`; override with `HERDR_GREP_SCOPE` when invoking headless.
+`HERDR_BIN_PATH`; override with `--scope`/`HERDR_GREP_SCOPE` on direct runs.
