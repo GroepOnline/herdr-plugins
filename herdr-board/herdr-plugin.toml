@@ -22,5 +22,5 @@ command = ["node", "src/board.js", "show-all"]
 [[panes]]
 id = "board"
 title = "Agent Board"
-placement = "split"
+placement = "overlay"
 command = ["node", "src/board.js", "pane"]
