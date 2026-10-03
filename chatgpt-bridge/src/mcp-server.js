@@ -22,7 +22,7 @@ import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const NAME = "herdr-chatgpt-bridge";
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const PROTOCOL_VERSION = "2025-06-18";
 const PORT_DEFAULT = 8791;
 const CMD_TIMEOUT_MS = 20_000;
