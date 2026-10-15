@@ -71,3 +71,12 @@ test("does not reclaim a fresh ownerless initialization lock", () => {
   assert.throws(() => writeFragment("test", "fresh", { ok: true }), /timed out waiting/);
   assert.equal(fs.existsSync(lockPath), true);
 });
+
+test("katerAuthHeaders sends Bearer only when a key is provisioned", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  delete process.env.KATER_API_KEY;
+  assert.deepEqual(katerAuthHeaders(), {});
+  process.env.KATER_API_KEY = "test-key";
+  assert.deepEqual(katerAuthHeaders(), { Authorization: "Bearer test-key" });
+  delete process.env.KATER_API_KEY;
+});

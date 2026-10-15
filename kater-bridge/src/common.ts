@@ -24,6 +24,12 @@ export function katerApiUrl(): string {
   return (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
 }
 
+/** Gateway runs auth_mode=apikey since v1.1.x; send Bearer when a key is provisioned. */
+export function katerAuthHeaders(): Record<string, string> {
+  const key = process.env.KATER_API_KEY || "";
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
 export function loadDotEnv() {
   if (!CONFIG_DIR) return;
   const p = path.join(CONFIG_DIR, ".env");
@@ -207,7 +213,7 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { signal: controller.signal, headers: katerAuthHeaders() });
   } finally {
     clearTimeout(timer);
   }
