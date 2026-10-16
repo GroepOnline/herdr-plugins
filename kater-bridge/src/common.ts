@@ -21,12 +21,20 @@ export const CONFIG_DIR = process.env.HERDR_PLUGIN_CONFIG_DIR || "";
 export const PLUGIN_ID = "com.chefgroep.kater-bridge";
 
 export function katerApiUrl(): string {
-  return (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
+  const url = (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
+  if (/[^\x20-\x7E]/.test(url)) {
+    throw new Error(`Invalid KATER_API_URL: contains non-printable characters`);
+  }
+  return url;
 }
 
-/** Gateway runs auth_mode=apikey since v1.1.x; send Bearer when a key is provisioned. */
+/** Gateway runs auth_mode=apikey since v1.1.x; send Bearer when a key is provisioned.
+ * Rejects keys with control/newline chars to prevent HTTP header injection. */
 export function katerAuthHeaders(): Record<string, string> {
   const key = process.env.KATER_API_KEY || "";
+  if (key && /[\r\n\t\0\x01-\x1f]/.test(key)) {
+    throw new Error(`Invalid KATER_API_KEY: contains control/newline characters`);
+  }
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 

@@ -74,9 +74,16 @@ test("does not reclaim a fresh ownerless initialization lock", () => {
 
 test("katerAuthHeaders sends Bearer only when a key is provisioned", () => {
   const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
   delete process.env.KATER_API_KEY;
-  assert.deepEqual(katerAuthHeaders(), {});
-  process.env.KATER_API_KEY = "test-key";
-  assert.deepEqual(katerAuthHeaders(), { Authorization: "Bearer test-key" });
-  delete process.env.KATER_API_KEY;
+  try {
+    assert.deepEqual(katerAuthHeaders(), {});
+    process.env.KATER_API_KEY = "test-key";
+    assert.deepEqual(katerAuthHeaders(), { Authorization: "Bearer test-key" });
+    process.env.KATER_API_KEY = "bad\r\nheader";
+    assert.throws(() => katerAuthHeaders(), /Invalid KATER_API_KEY/);
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
 });
