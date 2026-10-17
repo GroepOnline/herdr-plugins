@@ -45,7 +45,8 @@ export async function katerCallTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown> = {},
 ): Promise<T | null> {
-  const transport = new SSEClientTransport(new URL(katerMcpUrl()), { requestInit: { headers: katerAuthHeaders() } });
+  const mcpUrl = katerMcpUrl();
+  const transport = new SSEClientTransport(new URL(mcpUrl), { requestInit: { headers: katerAuthHeaders(mcpUrl) } });
   const client = new Client({ name: "kater-bridge", version: "0.2.2" }, { capabilities: {} });
 
   try {

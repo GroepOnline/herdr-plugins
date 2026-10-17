@@ -29,13 +29,37 @@ export function katerApiUrl(): string {
 }
 
 /** Gateway runs auth_mode=apikey since v1.1.x; send Bearer when a key is provisioned.
- * Rejects keys with control/newline chars to prevent HTTP header injection. */
-export function katerAuthHeaders(): Record<string, string> {
+ * Rejects keys with control/newline chars to prevent HTTP header injection.
+ * Refuses to send the key over plaintext HTTP to non-loopback hosts (RFC 6750:
+ * bearer tokens REQUIRE TLS). Pass the request URL to enforce this. */
+export function katerAuthHeaders(requestUrl?: string): Record<string, string> {
   const key = process.env.KATER_API_KEY || "";
   if (key && /[\r\n\t\0\x01-\x1f]/.test(key)) {
     throw new Error(`Invalid KATER_API_KEY: contains control/newline characters`);
   }
+  if (key && requestUrl) assertTlsForApiKey(requestUrl);
   return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/** True for loopback hosts where plaintext HTTP carries no network exposure. */
+export function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "::1" || h === "127.0.0.1" || /^127\./.test(h);
+}
+
+/** Throw when a Bearer key would be sent over remote (non-loopback) HTTP. */
+export function assertTlsForApiKey(requestUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(requestUrl);
+  } catch {
+    throw new Error(`Invalid KATER endpoint URL: unparseable`);
+  }
+  if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
+    throw new Error(
+      `Refusing to send KATER_API_KEY over plaintext HTTP to non-loopback host '${parsed.hostname}'; use HTTPS or a loopback gateway`,
+    );
+  }
 }
 
 export function loadDotEnv() {
@@ -221,7 +245,7 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { signal: controller.signal, headers: katerAuthHeaders() });
+    return await fetch(url, { signal: controller.signal, headers: katerAuthHeaders(url) });
   } finally {
     clearTimeout(timer);
   }

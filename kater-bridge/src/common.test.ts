@@ -87,3 +87,40 @@ test("katerAuthHeaders sends Bearer only when a key is provisioned", () => {
     else process.env.KATER_API_KEY = prev;
   }
 });
+
+test("katerAuthHeaders refuses plaintext HTTP key disclosure to remote hosts", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    // Loopback HTTP stays allowed (default gateway, no network exposure).
+    assert.deepEqual(katerAuthHeaders("http://127.0.0.1:9091/health"), {
+      Authorization: "Bearer test-key",
+    });
+    assert.deepEqual(katerAuthHeaders("http://localhost:9090/sse"), {
+      Authorization: "Bearer test-key",
+    });
+    // HTTPS always allowed.
+    assert.deepEqual(katerAuthHeaders("https://gateway.example.com/sse"), {
+      Authorization: "Bearer test-key",
+    });
+    // Remote plaintext HTTP must fail closed.
+    assert.throws(() => katerAuthHeaders("http://gateway.example.com/sse"), /plaintext HTTP/);
+    assert.throws(() => katerAuthHeaders("http://192.168.1.10:9091/health"), /plaintext HTTP/);
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
+test("katerAuthHeaders without key never throws on remote HTTP", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  delete process.env.KATER_API_KEY;
+  try {
+    assert.deepEqual(katerAuthHeaders("http://gateway.example.com/sse"), {});
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
