@@ -20,10 +20,15 @@ export function getStateDir(): string {
 export const CONFIG_DIR = process.env.HERDR_PLUGIN_CONFIG_DIR || "";
 export const PLUGIN_ID = "com.chefgroep.kater-bridge";
 
+/** Invalid plugin configuration (env) rather than a transport failure: the
+ * helpers below refuse to guess. Callers swallow these into a null result, so
+ * they are logged at the swallow point instead of vanishing. */
+export class KaterConfigError extends Error {}
+
 export function katerApiUrl(): string {
   const url = (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
   if (/[^\x20-\x7E]/.test(url)) {
-    throw new Error(`Invalid KATER_API_URL: contains non-printable characters`);
+    throw new KaterConfigError(`Invalid KATER_API_URL: contains non-printable characters`);
   }
   return url;
 }
@@ -35,7 +40,7 @@ export function katerApiUrl(): string {
 export function katerAuthHeaders(requestUrl?: string): Record<string, string> {
   const key = process.env.KATER_API_KEY || "";
   if (key && /[\r\n\t\0\x01-\x1f]/.test(key)) {
-    throw new Error(`Invalid KATER_API_KEY: contains control/newline characters`);
+    throw new KaterConfigError(`Invalid KATER_API_KEY: contains control/newline characters`);
   }
   if (key && requestUrl) assertTlsForApiKey(requestUrl);
   return key ? { Authorization: `Bearer ${key}` } : {};
@@ -57,10 +62,10 @@ export function assertTlsForApiKey(requestUrl: string): void {
   try {
     parsed = new URL(requestUrl);
   } catch {
-    throw new Error(`Invalid KATER endpoint URL: unparseable`);
+    throw new KaterConfigError(`Invalid KATER endpoint URL: unparseable`);
   }
   if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
-    throw new Error(
+    throw new KaterConfigError(
       `Refusing to send KATER_API_KEY over plaintext HTTP to non-loopback host '${parsed.hostname}'; use HTTPS or a loopback gateway`,
     );
   }
@@ -245,6 +250,12 @@ export function git(cmd: string) {
   }
 }
 
+/** A transport failure and a misconfiguration look identical to callers that
+ * only see a null result; say which one it was so the guard is diagnosable. */
+function reportConfigError(err: unknown) {
+  if (err instanceof KaterConfigError) console.error(`kater-bridge: ${err.message}`);
+}
+
 async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -267,7 +278,8 @@ export async function katerGet<T = unknown>(pathSuffix: string, ttlSeconds = 0):
     const data = (await res.json()) as T;
     if (ttlSeconds > 0) cacheSet(cacheKey, data, ttlSeconds);
     return data;
-  } catch {
+  } catch (err) {
+    reportConfigError(err);
     return null;
   }
 }
@@ -292,7 +304,8 @@ export async function katerFetch<T = Record<string, unknown>>(
     const result = { ok: res.ok, status: res.status, data };
     if (ttlSeconds > 0 && res.ok) cacheSet(cacheKey, result, ttlSeconds);
     return result;
-  } catch {
+  } catch (err) {
+    reportConfigError(err);
     return { ok: false, status: 0, data: null };
   }
 }

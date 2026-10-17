@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, test } from "node:test";
@@ -151,6 +152,34 @@ test("katerAuthHeaders refuses a remote host whose name starts with 127.", () =>
     if (prev === undefined) delete process.env.KATER_API_KEY;
     else process.env.KATER_API_KEY = prev;
   }
+});
+
+test("katerGet transmits the gateway API key, and omits it when unprovisioned", async () => {
+  const { katerGet } = require("./common.js");
+  const seen: Array<string | undefined> = [];
+  const server = http.createServer((req, res) => {
+    seen.push(req.headers.authorization);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  const prevUrl = process.env.KATER_API_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_API_URL = `http://127.0.0.1:${port}`;
+  try {
+    process.env.KATER_API_KEY = "test-key";
+    assert.deepEqual(await katerGet("/health"), { status: "ok" });
+    process.env.KATER_API_KEY = "";
+    assert.deepEqual(await katerGet("/health"), { status: "ok" });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (prevUrl === undefined) delete process.env.KATER_API_URL;
+    else process.env.KATER_API_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+  assert.deepEqual(seen, ["Bearer test-key", undefined]);
 });
 
 test("katerCallTool resolves null instead of rejecting on invalid KATER_API_URL", async () => {
