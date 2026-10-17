@@ -41,10 +41,14 @@ export function katerAuthHeaders(requestUrl?: string): Record<string, string> {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-/** True for loopback hosts where plaintext HTTP carries no network exposure. */
+/** True for loopback hosts where plaintext HTTP carries no network exposure.
+ * The 127/8 check requires a full dotted quad: a name such as
+ * "127.evil.example.com" also starts with "127." but is a remote host. */
 export function isLoopbackHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return h === "localhost" || h === "::1" || h === "127.0.0.1" || /^127\./.test(h);
+  if (h === "localhost" || h === "::1") return true;
+  if (!/^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(h)) return false;
+  return h.split(".").every((octet) => Number(octet) <= 255);
 }
 
 /** Throw when a Bearer key would be sent over remote (non-loopback) HTTP. */

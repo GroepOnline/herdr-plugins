@@ -125,6 +125,34 @@ test("katerAuthHeaders without key never throws on remote HTTP", () => {
   }
 });
 
+test("isLoopbackHost only accepts loopback literals, not names starting with 127.", () => {
+  const { isLoopbackHost } = require("./common.js");
+  for (const h of ["localhost", "::1", "[::1]", "127.0.0.1", "127.0.0.53", "127.1.2.3", "LOCALHOST"]) {
+    assert.equal(isLoopbackHost(h), true, `${h} should be loopback`);
+  }
+  // A remote host named 127.<something> must not pass the loopback exemption.
+  for (const h of ["127.evil.example.com", "127.0.0.1.evil.test", "127.", "127.0.0.256", "0.0.0.0", "10.0.0.1"]) {
+    assert.equal(isLoopbackHost(h), false, `${h} should not be loopback`);
+  }
+});
+
+test("katerAuthHeaders refuses a remote host whose name starts with 127.", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.throws(() => katerAuthHeaders("http://127.evil.example.com/sse"), /plaintext HTTP/);
+    assert.throws(() => katerAuthHeaders("http://127.0.0.1.evil.test/health"), /plaintext HTTP/);
+    // Real 127/8 literals stay exempt.
+    assert.deepEqual(katerAuthHeaders("http://127.0.0.53:9091/health"), {
+      Authorization: "Bearer test-key",
+    });
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
 test("katerCallTool resolves null instead of rejecting on invalid KATER_API_URL", async () => {
   const { katerCallTool } = require("./mcp.js");
   const prevUrl = process.env.KATER_API_URL;
