@@ -221,3 +221,54 @@ test("katerCallTool fails fast when the TLS guard refuses a remote plaintext MCP
     else process.env.KATER_API_KEY = prevKey;
   }
 });
+
+test("katerCallTool sends the gateway API key on the SSE GET and every MCP POST", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const seen: Array<{ method: string; auth: string | undefined }> = [];
+  let stream: http.ServerResponse | undefined;
+  const server = http.createServer((req, res) => {
+    seen.push({ method: req.method || "", auth: req.headers.authorization });
+    if (req.method === "GET" && req.url === "/sse") {
+      stream = res;
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      res.write("event: endpoint\ndata: /messages?session=t\n\n");
+      return;
+    }
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      res.writeHead(202).end();
+      const msg = JSON.parse(body);
+      if (msg.id === undefined) return;
+      const result =
+        msg.method === "initialize"
+          ? {
+              protocolVersion: msg.params.protocolVersion,
+              capabilities: { tools: {} },
+              serverInfo: { name: "kater-test", version: "0" },
+            }
+          : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
+      stream?.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_MCP_URL = `http://127.0.0.1:${port}`;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.deepEqual(await katerCallTool("utrecht_fleet_inventory", {}), { ok: true });
+  } finally {
+    stream?.end();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+  assert.ok(seen.some((r) => r.method === "GET"), "SSE GET was not issued");
+  assert.ok(seen.filter((r) => r.method === "POST").length >= 2, "expected initialize and tools/call POSTs");
+  for (const r of seen) assert.equal(r.auth, "Bearer test-key", `${r.method} lacked the API key`);
+});
