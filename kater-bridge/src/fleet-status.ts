@@ -26,10 +26,17 @@ async function main() {
   ]);
 
   if (!health && !status && !inventory) {
+    let where: string;
+    try {
+      where = katerApiUrl();
+    } catch (err) {
+      // An invalid KATER_API_URL must not take the diagnostic fragment down with it.
+      where = err instanceof Error ? err.message : "invalid KATER_API_URL";
+    }
     writeFragment(
       PLUGIN_ID,
       "kater",
-      { error: `Kater gateway unreachable at ${katerApiUrl()}` },
+      { error: `Kater gateway unreachable at ${where}` },
       30,
     );
     console.error("kater-bridge: gateway unreachable");

@@ -124,3 +124,43 @@ test("katerAuthHeaders without key never throws on remote HTTP", () => {
     else process.env.KATER_API_KEY = prev;
   }
 });
+
+test("katerCallTool resolves null instead of rejecting on invalid KATER_API_URL", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const prevUrl = process.env.KATER_API_URL;
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  // Tab is non-printable, so katerApiUrl() throws before any network access.
+  process.env.KATER_API_URL = "http://127.0.0.1:9091\t";
+  delete process.env.KATER_MCP_URL;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.equal(await katerCallTool("utrecht_fleet_inventory", {}), null);
+  } finally {
+    if (prevUrl === undefined) delete process.env.KATER_API_URL;
+    else process.env.KATER_API_URL = prevUrl;
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+});
+
+test("katerCallTool fails fast when the TLS guard refuses a remote plaintext MCP URL", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_MCP_URL = "http://192.0.2.1:9089"; // TEST-NET-1, unroutable
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    const started = Date.now();
+    assert.equal(await katerCallTool("utrecht_fleet_inventory", {}), null);
+    // Refused at transport construction; a real connect attempt would take ~15s.
+    assert.ok(Date.now() - started < 5000, "TLS guard should refuse before connecting");
+  } finally {
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+});
