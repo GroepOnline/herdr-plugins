@@ -57,3 +57,67 @@ command = ["npm", "run", "build"]
 ''')
         (self.dir / "package.json").write_text(json.dumps({"scripts":{"build":"tsc"}}))
         self.assertEqual([], check_plugin(self.dir))
+
+    def test_malformed_package_json(self):
+        (self.dir / "package.json").write_text("{ invalid json }")
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("invalid package.json" in e for e in errors))
+
+    def test_invalid_semver(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST.replace('version = "0.1.0"', 'version = "not-semver"'))
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("invalid version" in e for e in errors))
+
+    def test_missing_required_field(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST.replace('id = "example.valid"\n', ''))
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("missing id" in e for e in errors))
+
+    def test_invalid_action_context(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST.replace('contexts = ["global"]', 'contexts = ["invalid"]'))
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("invalid action context" in e for e in errors))
+
+    def test_invalid_event_no_dot(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST + '''
+[[events]]
+on = "invalid_event"
+command = ["node", "src/run.js"]
+''')
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("invalid event declaration" in e for e in errors))
+
+    def test_duplicate_action_id(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST + '''
+[[actions]]
+id = "go"
+contexts = ["global"]
+command = ["node", "src/run.js"]
+''')
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("duplicate actions id" in e for e in errors))
+
+    def test_invalid_ident(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST.replace('id = "go"', 'id = "go!"'))
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("invalid actions id" in e for e in errors))
+
+    def test_empty_platforms(self):
+        p = self.dir / "herdr-plugin.toml"
+        p.write_text(MANIFEST.replace('platforms = ["linux"]', 'platforms = []'))
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("platforms missing" in e for e in errors))
+
+    def test_missing_platforms(self):
+        p = self.dir / "herdr-plugin.toml"
+        lines = MANIFEST.strip().split('\n')
+        lines = [l for l in lines if not l.startswith('platforms')]
+        p.write_text('\n'.join(lines) + '\n')
+        errors = check_plugin(self.dir)
+        self.assertTrue(any("platforms missing" in e for e in errors))
