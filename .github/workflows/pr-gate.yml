@@ -11,6 +11,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Validate manifests vs package.json vs registry
         run: python3 scripts/validate.py
+      - name: Upstream Herdr plugin-v1 contract
+        run: python3 scripts/check_upstream_compat.py
+      - name: Upstream contract regression tests
+        run: python3 -m unittest discover -s tests -p 'test_upstream_contract.py'
       - name: Syntax-check JS plugin sources
         run: |
           fail=0
