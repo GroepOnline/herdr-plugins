@@ -17,6 +17,14 @@ IDENT = re.compile(r"^[A-Za-z0-9:_-]+$")
 
 
 def check_plugin(folder: Path) -> list[str]:
+    """Validate a single plugin manifest and entrypoints.
+
+    Args:
+        folder: Path to the plugin directory containing herdr-plugin.toml.
+
+    Returns:
+        List of error strings; empty if the plugin passes all checks.
+    """
     errors: list[str] = []
     try:
         m = tomllib.loads((folder / "herdr-plugin.toml").read_text())
@@ -33,7 +41,12 @@ def check_plugin(folder: Path) -> list[str]:
     steps = m.get("build", [])
     builds = any(s.get("command") == ["npm", "run", "build"] for s in steps)
     pkg_path = folder / "package.json"
-    pkg = json.loads(pkg_path.read_text()) if pkg_path.is_file() else {}
+    pkg: dict = {}
+    if pkg_path.is_file():
+        try:
+            pkg = json.loads(pkg_path.read_text())
+        except json.JSONDecodeError as exc:
+            errors.append(f"{folder.name}: invalid package.json: {exc}")
     generates_dist = builds and bool(pkg.get("scripts", {}).get("build"))
     ids: dict[str, set[str]] = {}
     for section in ("actions", "events", "panes", "startup", "build", "link_handlers"):
@@ -74,6 +87,11 @@ def check_plugin(folder: Path) -> list[str]:
 
 
 def main() -> int:
+    """Run the upstream compatibility check for all configured plugins.
+
+    Returns:
+        0 if all plugins pass, 1 if any validation errors found.
+    """
     errors = [e for name in PLUGINS for e in check_plugin(ROOT / name)]
     for e in errors:
         print("FAIL", e)
