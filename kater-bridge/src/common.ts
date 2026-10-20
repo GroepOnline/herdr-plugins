@@ -20,8 +20,55 @@ export function getStateDir(): string {
 export const CONFIG_DIR = process.env.HERDR_PLUGIN_CONFIG_DIR || "";
 export const PLUGIN_ID = "com.chefgroep.kater-bridge";
 
+/** Invalid plugin configuration (env) rather than a transport failure: the
+ * helpers below refuse to guess. Callers swallow these into a null result, so
+ * they are logged at the swallow point instead of vanishing. */
+export class KaterConfigError extends Error {}
+
 export function katerApiUrl(): string {
-  return (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
+  const url = (process.env.KATER_API_URL || "http://127.0.0.1:9091").replace(/\/$/, "");
+  if (/[^\x20-\x7E]/.test(url)) {
+    throw new KaterConfigError(`Invalid KATER_API_URL: contains non-printable characters`);
+  }
+  return url;
+}
+
+/** Gateway runs auth_mode=apikey since v1.1.x; send Bearer when a key is provisioned.
+ * Rejects keys with control/newline chars to prevent HTTP header injection.
+ * Refuses to send the key over plaintext HTTP to non-loopback hosts (RFC 6750:
+ * bearer tokens REQUIRE TLS). Pass the request URL to enforce this. */
+export function katerAuthHeaders(requestUrl?: string): Record<string, string> {
+  const key = process.env.KATER_API_KEY || "";
+  if (key && /[\r\n\t\0\x01-\x1f]/.test(key)) {
+    throw new KaterConfigError(`Invalid KATER_API_KEY: contains control/newline characters`);
+  }
+  if (key && requestUrl) assertTlsForApiKey(requestUrl);
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/** True for loopback hosts where plaintext HTTP carries no network exposure.
+ * The 127/8 check requires a full dotted quad: a name such as
+ * "127.evil.example.com" also starts with "127." but is a remote host. */
+export function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h === "::1") return true;
+  if (!/^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(h)) return false;
+  return h.split(".").every((octet) => Number(octet) <= 255);
+}
+
+/** Throw when a Bearer key would be sent over remote (non-loopback) HTTP. */
+export function assertTlsForApiKey(requestUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(requestUrl);
+  } catch {
+    throw new KaterConfigError(`Invalid KATER endpoint URL: unparseable`);
+  }
+  if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
+    throw new KaterConfigError(
+      `Refusing to send KATER_API_KEY over plaintext HTTP to non-loopback host '${parsed.hostname}'; use HTTPS or a loopback gateway`,
+    );
+  }
 }
 
 export function loadDotEnv() {
@@ -203,11 +250,17 @@ export function git(cmd: string) {
   }
 }
 
+/** A transport failure and a misconfiguration look identical to callers that
+ * only see a null result; say which one it was so the guard is diagnosable. */
+function reportConfigError(err: unknown) {
+  if (err instanceof KaterConfigError) console.error(`kater-bridge: ${err.message}`);
+}
+
 async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { signal: controller.signal, headers: katerAuthHeaders(url) });
   } finally {
     clearTimeout(timer);
   }
@@ -225,7 +278,8 @@ export async function katerGet<T = unknown>(pathSuffix: string, ttlSeconds = 0):
     const data = (await res.json()) as T;
     if (ttlSeconds > 0) cacheSet(cacheKey, data, ttlSeconds);
     return data;
-  } catch {
+  } catch (err) {
+    reportConfigError(err);
     return null;
   }
 }
@@ -250,7 +304,8 @@ export async function katerFetch<T = Record<string, unknown>>(
     const result = { ok: res.ok, status: res.status, data };
     if (ttlSeconds > 0 && res.ok) cacheSet(cacheKey, result, ttlSeconds);
     return result;
-  } catch {
+  } catch (err) {
+    reportConfigError(err);
     return { ok: false, status: 0, data: null };
   }
 }
