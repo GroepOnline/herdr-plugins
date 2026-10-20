@@ -37,3 +37,7 @@ Pods/
 .env
 .env.local
 .env.*.local
+
+# Python compatibility tests
+__pycache__/
+*.py[cod]
