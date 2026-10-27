@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, test } from "node:test";
@@ -70,4 +71,204 @@ test("does not reclaim a fresh ownerless initialization lock", () => {
   const { writeFragment } = require("./common.js");
   assert.throws(() => writeFragment("test", "fresh", { ok: true }), /timed out waiting/);
   assert.equal(fs.existsSync(lockPath), true);
+});
+
+test("katerAuthHeaders sends Bearer only when a key is provisioned", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  delete process.env.KATER_API_KEY;
+  try {
+    assert.deepEqual(katerAuthHeaders(), {});
+    process.env.KATER_API_KEY = "test-key";
+    assert.deepEqual(katerAuthHeaders(), { Authorization: "Bearer test-key" });
+    process.env.KATER_API_KEY = "bad\r\nheader";
+    assert.throws(() => katerAuthHeaders(), /Invalid KATER_API_KEY/);
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
+test("katerAuthHeaders refuses plaintext HTTP key disclosure to remote hosts", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    // Loopback HTTP stays allowed (default gateway, no network exposure).
+    assert.deepEqual(katerAuthHeaders("http://127.0.0.1:9091/health"), {
+      Authorization: "Bearer test-key",
+    });
+    assert.deepEqual(katerAuthHeaders("http://localhost:9090/sse"), {
+      Authorization: "Bearer test-key",
+    });
+    // HTTPS always allowed.
+    assert.deepEqual(katerAuthHeaders("https://gateway.example.com/sse"), {
+      Authorization: "Bearer test-key",
+    });
+    // Remote plaintext HTTP must fail closed.
+    assert.throws(() => katerAuthHeaders("http://gateway.example.com/sse"), /plaintext HTTP/);
+    assert.throws(() => katerAuthHeaders("http://192.168.1.10:9091/health"), /plaintext HTTP/);
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
+test("katerAuthHeaders without key never throws on remote HTTP", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  delete process.env.KATER_API_KEY;
+  try {
+    assert.deepEqual(katerAuthHeaders("http://gateway.example.com/sse"), {});
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
+test("isLoopbackHost only accepts loopback literals, not names starting with 127.", () => {
+  const { isLoopbackHost } = require("./common.js");
+  for (const h of ["localhost", "::1", "[::1]", "127.0.0.1", "127.0.0.53", "127.1.2.3", "LOCALHOST"]) {
+    assert.equal(isLoopbackHost(h), true, `${h} should be loopback`);
+  }
+  // A remote host named 127.<something> must not pass the loopback exemption.
+  for (const h of ["127.evil.example.com", "127.0.0.1.evil.test", "127.", "127.0.0.256", "0.0.0.0", "10.0.0.1"]) {
+    assert.equal(isLoopbackHost(h), false, `${h} should not be loopback`);
+  }
+});
+
+test("katerAuthHeaders refuses a remote host whose name starts with 127.", () => {
+  const { katerAuthHeaders } = require("./common.js");
+  const prev = process.env.KATER_API_KEY;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.throws(() => katerAuthHeaders("http://127.evil.example.com/sse"), /plaintext HTTP/);
+    assert.throws(() => katerAuthHeaders("http://127.0.0.1.evil.test/health"), /plaintext HTTP/);
+    // Real 127/8 literals stay exempt.
+    assert.deepEqual(katerAuthHeaders("http://127.0.0.53:9091/health"), {
+      Authorization: "Bearer test-key",
+    });
+  } finally {
+    if (prev === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prev;
+  }
+});
+
+test("katerGet transmits the gateway API key, and omits it when unprovisioned", async () => {
+  const { katerGet } = require("./common.js");
+  const seen: Array<string | undefined> = [];
+  const server = http.createServer((req, res) => {
+    seen.push(req.headers.authorization);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  const prevUrl = process.env.KATER_API_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_API_URL = `http://127.0.0.1:${port}`;
+  try {
+    process.env.KATER_API_KEY = "test-key";
+    assert.deepEqual(await katerGet("/health"), { status: "ok" });
+    process.env.KATER_API_KEY = "";
+    assert.deepEqual(await katerGet("/health"), { status: "ok" });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (prevUrl === undefined) delete process.env.KATER_API_URL;
+    else process.env.KATER_API_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+  assert.deepEqual(seen, ["Bearer test-key", undefined]);
+});
+
+test("katerCallTool resolves null instead of rejecting on invalid KATER_API_URL", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const prevUrl = process.env.KATER_API_URL;
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  // Tab is non-printable, so katerApiUrl() throws before any network access.
+  process.env.KATER_API_URL = "http://127.0.0.1:9091\t";
+  delete process.env.KATER_MCP_URL;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.equal(await katerCallTool("utrecht_fleet_inventory", {}), null);
+  } finally {
+    if (prevUrl === undefined) delete process.env.KATER_API_URL;
+    else process.env.KATER_API_URL = prevUrl;
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+});
+
+test("katerCallTool fails fast when the TLS guard refuses a remote plaintext MCP URL", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_MCP_URL = "http://192.0.2.1:9089"; // TEST-NET-1, unroutable
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    const started = Date.now();
+    assert.equal(await katerCallTool("utrecht_fleet_inventory", {}), null);
+    // Refused at transport construction; a real connect attempt would take ~15s.
+    assert.ok(Date.now() - started < 5000, "TLS guard should refuse before connecting");
+  } finally {
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+});
+
+test("katerCallTool sends the gateway API key on the SSE GET and every MCP POST", async () => {
+  const { katerCallTool } = require("./mcp.js");
+  const seen: Array<{ method: string; auth: string | undefined }> = [];
+  let stream: http.ServerResponse | undefined;
+  const server = http.createServer((req, res) => {
+    seen.push({ method: req.method || "", auth: req.headers.authorization });
+    if (req.method === "GET" && req.url === "/sse") {
+      stream = res;
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      res.write("event: endpoint\ndata: /messages?session=t\n\n");
+      return;
+    }
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      res.writeHead(202).end();
+      const msg = JSON.parse(body);
+      if (msg.id === undefined) return;
+      const result =
+        msg.method === "initialize"
+          ? {
+              protocolVersion: msg.params.protocolVersion,
+              capabilities: { tools: {} },
+              serverInfo: { name: "kater-test", version: "0" },
+            }
+          : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
+      stream?.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  const prevMcp = process.env.KATER_MCP_URL;
+  const prevKey = process.env.KATER_API_KEY;
+  process.env.KATER_MCP_URL = `http://127.0.0.1:${port}`;
+  process.env.KATER_API_KEY = "test-key";
+  try {
+    assert.deepEqual(await katerCallTool("utrecht_fleet_inventory", {}), { ok: true });
+  } finally {
+    stream?.end();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (prevMcp === undefined) delete process.env.KATER_MCP_URL;
+    else process.env.KATER_MCP_URL = prevMcp;
+    if (prevKey === undefined) delete process.env.KATER_API_KEY;
+    else process.env.KATER_API_KEY = prevKey;
+  }
+  assert.ok(seen.some((r) => r.method === "GET"), "SSE GET was not issued");
+  assert.ok(seen.filter((r) => r.method === "POST").length >= 2, "expected initialize and tools/call POSTs");
+  for (const r of seen) assert.equal(r.auth, "Bearer test-key", `${r.method} lacked the API key`);
 });

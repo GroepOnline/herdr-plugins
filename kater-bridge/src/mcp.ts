@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { katerApiUrl } from "./common";
+import { katerApiUrl, katerAuthHeaders } from "./common";
 
 const MCP_TIMEOUT_MS = 15000;
 
@@ -45,10 +45,15 @@ export async function katerCallTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown> = {},
 ): Promise<T | null> {
-  const transport = new SSEClientTransport(new URL(katerMcpUrl()));
-  const client = new Client({ name: "kater-bridge", version: "0.2.0" }, { capabilities: {} });
-
+  let client: Client | undefined;
   try {
+    // URL and auth resolution live inside the guard: katerApiUrl/katerAuthHeaders
+    // throw on invalid configuration, and callers contractually get T | null.
+    const mcpUrl = katerMcpUrl();
+    const transport = new SSEClientTransport(new URL(mcpUrl), {
+      requestInit: { headers: katerAuthHeaders(mcpUrl) },
+    });
+    client = new Client({ name: "kater-bridge", version: "0.2.2" }, { capabilities: {} });
     await client.connect(transport);
     const result = await client.callTool(
       { name: toolName, arguments: args },
@@ -63,7 +68,7 @@ export async function katerCallTool<T = unknown>(
     return null;
   } finally {
     try {
-      await client.close();
+      await client?.close();
     } catch {
       /* ignore */
     }

@@ -54,7 +54,7 @@
     {
       "id": "com.chefgroep.kater-bridge",
       "name": "Kater MCP Bridge",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "description": "Gateway health, doctor, PR-gate (REST) and Utrecht fleet/pipeline/ask (MCP SSE)",
       "homepage": "https://github.com/GroepOnline/herdr-plugins/tree/main/kater-bridge",
       "categories": [
